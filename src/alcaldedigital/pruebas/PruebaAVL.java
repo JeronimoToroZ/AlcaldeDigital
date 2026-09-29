@@ -7,20 +7,18 @@ import alcaldedigital.modelo.TipoContenido;
 import java.util.List;
 
 /**
- * BANCO DE PRUEBAS DEL AVL (se ejecuta por consola)
- * ================================================
- * Esta clase existe para la sustentacion: demuestra, sin abrir la interfaz,
- * que el arbol cumple lo que se afirma. Cubre:
- *
- *   1. Insercion con rotacion simple derecha  (caso Izquierda-Izquierda)
- *   2. Insercion con rotacion simple izquierda (caso Derecha-Derecha)
- *   3. Insercion con rotacion doble           (casos ID y DI)
- *   4. Comparacion de altura contra un ABB degenerado
- *   5. Los tres recorridos
- *   6. Eliminacion en los tres casos (hoja, un hijo, dos hijos)
- *   7. Consulta por rango
- *
- * Ejecutar con:  java -cp build alcaldedigital.pruebas.PruebaAVL
+ * BANCO DE PRUEBAS DEL AVL (ejecutable por consola)
+ * ===============================================
+ * Sirve para demostrar, sin necesidad de abrir la interfaz, que el árbol
+ * cumple con todos los requerimientos de la estructura:
+ * 
+ *   1. Inserción con rotación simple derecha (caso Izquierda-Izquierda).
+ *   2. Inserción con rotación simple izquierda (caso Derecha-Derecha).
+ *   3. Inserción con rotación doble (casos Izquierda-Derecha y Derecha-Izquierda).
+ *   4. Comparación de altura frente a un ABB degenerado (evitando listas enlazadas).
+ *   5. Verificación de los tres recorridos (Inorden, Preorden, Postorden).
+ *   6. Eliminación cubriendo los tres casos (hoja, un hijo, dos hijos).
+ *   7. Consultas por rango (fundamental para la habilidad del Periodista).
  */
 public class PruebaAVL {
 
@@ -31,14 +29,23 @@ public class PruebaAVL {
                 TipoContenido.OPINION, credibilidad);
     }
 
-    private static void titulo(String t) {
-        System.out.println();
-        System.out.println("=".repeat(70));
-        System.out.println(t);
-        System.out.println("=".repeat(70));
+    /** Método auxiliar para repetir caracteres de forma compatible con Java 8+ */
+    private static String repetir(String s, int veces) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < veces; i++) {
+            sb.append(s);
+        }
+        return sb.toString();
     }
 
-    /** Imprime el arbol acostado: la raiz a la izquierda, se lee girando la cabeza. */
+    private static void titulo(String t) {
+        System.out.println();
+        System.out.println(repetir("=", 70));
+        System.out.println(t);
+        System.out.println(repetir("=", 70));
+    }
+
+    /** Imprime el árbol acostado: la raíz queda a la izquierda (se lee girando la cabeza). */
     private static void imprimir(ArbolAVL arbol, NodoAVL nodo, String prefijo) {
         if (nodo == null) {
             return;
@@ -57,7 +64,7 @@ public class PruebaAVL {
         a1.insertar(pub(30));
         a1.insertar(pub(20));
         a1.insertar(pub(10));
-        System.out.println("Sin rebalanceo la altura seria 2. Altura real: " + a1.getAlturaArbol());
+        System.out.println("Sin rebalanceo la altura sería 2. Altura real: " + a1.getAlturaArbol());
         System.out.println("Rotaciones aplicadas: " + a1.getRotacionesRealizadas());
         imprimir(a1, a1.getRaiz(), "");
 
@@ -67,7 +74,7 @@ public class PruebaAVL {
         a2.insertar(pub(20));
         a2.insertar(pub(30));
         System.out.println("Altura: " + a2.getAlturaArbol()
-                + "   Rotaciones: " + a2.getRotacionesRealizadas());
+                + "    Rotaciones: " + a2.getRotacionesRealizadas());
         imprimir(a2, a2.getRaiz(), "");
 
         titulo("3. ROTACION DOBLE - caso Izquierda-Derecha (30, 10, 20)");
@@ -85,16 +92,16 @@ public class PruebaAVL {
         }
         System.out.println("Elementos: " + a4.getTamano());
         System.out.println("Altura del AVL: " + a4.getAlturaArbol()
-                + "   (un ABB simple habria quedado con altura 14, o sea una lista)");
-        System.out.println("Cota teorica log2(15) = "
+                + "    (un ABB simple habría quedado con altura 14, o sea una lista)");
+        System.out.println("Cota teórica log2(15) = "
                 + String.format("%.2f", Math.log(15) / Math.log(2)));
         System.out.println("Rotaciones aplicadas: " + a4.getRotacionesRealizadas());
         System.out.println("Invariante AVL: " + (a4.estaBalanceado() ? "se cumple" : "ROTA"));
 
-        titulo("5. RECORRIDOS sobre el arbol del punto 4");
+        titulo("5. RECORRIDOS sobre el árbol del punto 4");
         System.out.println("INORDEN (credibilidad ascendente):");
         System.out.println("  " + credibilidades(a4.inorden()));
-        System.out.println("PREORDEN (raiz primero):");
+        System.out.println("PREORDEN (raíz primero):");
         System.out.println("  " + credibilidades(a4.preorden()));
         System.out.println("POSTORDEN (hojas primero):");
         System.out.println("  " + credibilidades(a4.postorden()));
@@ -107,7 +114,7 @@ public class PruebaAVL {
             refs[i] = pub(valores[i]);
             a5.insertar(refs[i]);
         }
-        System.out.println("Arbol inicial (altura " + a5.getAlturaArbol() + "):");
+        System.out.println("Árbol inicial (altura " + a5.getAlturaArbol() + "):");
         imprimir(a5, a5.getRaiz(), "");
 
         System.out.println("\nCASO 1 - eliminar una HOJA (20):");
@@ -118,7 +125,7 @@ public class PruebaAVL {
         a5.eliminar(refs[5].claveAVL());
         imprimir(a5, a5.getRaiz(), "");
 
-        System.out.println("\nCASO 3 - eliminar un nodo con DOS HIJOS (la raiz, 50):");
+        System.out.println("\nCASO 3 - eliminar un nodo con DOS HIJOS (la raíz, 50):");
         a5.eliminar(refs[0].claveAVL());
         imprimir(a5, a5.getRaiz(), "");
         System.out.println("Invariante AVL tras las eliminaciones: "
@@ -133,11 +140,11 @@ public class PruebaAVL {
         System.out.println("Feed completo (inorden): " + credibilidades(a6.inorden()));
         System.out.println("Sospechosas (credibilidad < 35): "
                 + credibilidades(a6.menosCreiblesQue(35)));
-        System.out.println("El recorrido poda las ramas altas: no revisa todo el arbol.");
+        System.out.println("El recorrido poda las ramas altas: no revisa todo el árbol.");
 
         titulo("RESUMEN");
         System.out.println("Todas las operaciones mantuvieron el invariante AVL.");
-        System.out.println("Busqueda, insercion y eliminacion en O(log n) garantizado.");
+        System.out.println("Búsqueda, inserción y eliminación en O(log n) garantizado.");
     }
 
     private static String credibilidades(List<Publicacion> lista) {

@@ -5,31 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * ARBOL AVL DE PUBLICACIONES
- * ==========================
- *
- * 1. QUE PROBLEMA RESUELVE
- *    El feed de Civitas crece durante toda la partida y el juego necesita, en cada
- *    turno, responder rapido tres preguntas:
- *      - buscar una publicacion concreta (para actualizar su estado),
- *      - listar las publicaciones ordenadas de menos a mas creible
- *        (es la habilidad del Periodista: "ver lo mas sospechoso del feed"),
- *      - retirar del feed una publicacion reportada.
- *    Con una lista eso costaria O(n) por consulta. Con un arbol de busqueda cuesta
- *    O(altura).
- *
- * 2. POR QUE AVL Y NO ABB SIMPLE
- *    Las publicaciones no llegan en orden aleatorio: los eventos del juego tienden
- *    a generar rachas (varias noticias falsas seguidas, es decir, credibilidades
- *    bajas en orden creciente o decreciente). Con esas rachas un ABB degenera en
- *    una lista enlazada y la altura pasa a ser O(n). El AVL rebalancea con
- *    rotaciones y garantiza altura O(log n) SIEMPRE, sin importar el orden de
- *    insercion. Ese es el argumento exacto para la sustentacion.
- *
- * 3. FACTOR DE EQUILIBRIO
- *    factorEquilibrio(nodo) = altura(hijo izquierdo) - altura(hijo derecho)
- *    Un nodo esta desbalanceado cuando ese valor es +2 (cargado a la izquierda)
- *    o -2 (cargado a la derecha).
+ * Estructura de datos de Árbol AVL para la gestión ordenada y auto-balanceada 
+ * de las publicaciones dentro del juego. Garantiza operaciones eficientes 
+ * de inserción, búsqueda y eliminación con complejidad logarítmica.
+ * 
+ * @author Naty
  */
 public class ArbolAVL {
 
@@ -37,22 +17,24 @@ public class ArbolAVL {
     private int tamano;
     private int rotacionesRealizadas;
 
+    /**
+     * Inicializa un árbol AVL vacío con sus contadores en cero.
+     */
     public ArbolAVL() {
         this.raiz = null;
         this.tamano = 0;
         this.rotacionesRealizadas = 0;
     }
 
-    // ------------------------------------------------------------------
-    // Utilidades basicas
-    // ------------------------------------------------------------------
-
-    /** Altura de un subarbol. El subarbol vacio mide -1 para que una hoja mida 0. */
+    /**
+     * Métodos auxiliares de control estructural:
+     * Calcula la altura de los subárboles (retornando -1 si son nulos) 
+     * y gestiona el factor de equilibrio y actualización de alturas.
+     */
     private int altura(NodoAVL nodo) {
         return (nodo == null) ? -1 : nodo.getAltura();
     }
 
-    /** altura_izquierda - altura_derecha. Cargado a la izquierda => positivo. */
     public int factorEquilibrio(NodoAVL nodo) {
         if (nodo == null) {
             return 0;
@@ -64,19 +46,9 @@ public class ArbolAVL {
         nodo.setAltura(1 + Math.max(altura(nodo.getIzquierdo()), altura(nodo.getDerecho())));
     }
 
-    // ------------------------------------------------------------------
-    // Rotaciones
-    // ------------------------------------------------------------------
-
     /**
-     * Rotacion simple a la derecha. Se usa cuando el nodo esta cargado a la
-     * izquierda y su hijo izquierdo tambien (caso Izquierda-Izquierda).
-     *
-     *        z                y
-     *       / \              / \
-     *      y   D    ==>     x   z
-     *     / \                  / \
-     *    x   C                C   D
+     * Rotaciones simples (derecha e izquierda) y rebalanceo general del árbol 
+     * para mantener la propiedad AVL tras modificaciones en los nodos.
      */
     private NodoAVL rotarDerecha(NodoAVL z) {
         NodoAVL y = z.getIzquierdo();
@@ -85,21 +57,12 @@ public class ArbolAVL {
         y.setDerecho(z);
         z.setIzquierdo(subarbolC);
 
-        actualizarAltura(z); // primero el que quedo abajo
+        actualizarAltura(z);
         actualizarAltura(y);
         rotacionesRealizadas++;
-        return y; // y pasa a ser la nueva raiz de este subarbol
+        return y; 
     }
 
-    /**
-     * Rotacion simple a la izquierda. Caso Derecha-Derecha.
-     *
-     *      z                    y
-     *     / \                  / \
-     *    A   y      ==>       z   x
-     *       / \              / \
-     *      B   x            A   B
-     */
     private NodoAVL rotarIzquierda(NodoAVL z) {
         NodoAVL y = z.getDerecho();
         NodoAVL subarbolB = y.getIzquierdo();
@@ -113,35 +76,29 @@ public class ArbolAVL {
         return y;
     }
 
-    /**
-     * Decide que rotacion aplicar segun el factor de equilibrio.
-     * Los cuatro casos clasicos: II, DD, ID, DI.
-     */
     private NodoAVL rebalancear(NodoAVL nodo) {
         actualizarAltura(nodo);
         int fe = factorEquilibrio(nodo);
 
-        if (fe > 1) { // cargado a la izquierda
+        if (fe > 1) { // Desbalanceado a la izquierda
             if (factorEquilibrio(nodo.getIzquierdo()) < 0) {
-                // Caso Izquierda-Derecha: primero se endereza el hijo
                 nodo.setIzquierdo(rotarIzquierda(nodo.getIzquierdo()));
             }
-            return rotarDerecha(nodo); // Caso Izquierda-Izquierda
+            return rotarDerecha(nodo);
         }
 
-        if (fe < -1) { // cargado a la derecha
+        if (fe < -1) { // Desbalanceado a la derecha
             if (factorEquilibrio(nodo.getDerecho()) > 0) {
-                // Caso Derecha-Izquierda
                 nodo.setDerecho(rotarDerecha(nodo.getDerecho()));
             }
-            return rotarIzquierda(nodo); // Caso Derecha-Derecha
+            return rotarIzquierda(nodo);
         }
 
-        return nodo; // ya estaba balanceado
+        return nodo;
     }
 
     // ------------------------------------------------------------------
-    // Insercion
+    // Inserción
     // ------------------------------------------------------------------
 
     public void insertar(Publicacion publicacion) {
@@ -160,19 +117,20 @@ public class ArbolAVL {
         } else if (clave > nodo.getClave()) {
             nodo.setDerecho(insertarRec(nodo.getDerecho(), p));
         } else {
-            nodo.setPublicacion(p); // clave repetida: se sobreescribe, no se duplica
+            nodo.setPublicacion(p); // Actualiza si la clave ya existe
             return nodo;
         }
 
-        // Al volver de la recursion se corrige el equilibrio de abajo hacia arriba.
         return rebalancear(nodo);
     }
 
     // ------------------------------------------------------------------
-    // Busqueda
+    // Búsqueda
     // ------------------------------------------------------------------
 
-    /** Busqueda por clave compuesta. O(log n). */
+    /**
+     * Busca y retorna una publicación mediante su clave numérica con tiempo O(log n).
+     */
     public Publicacion buscar(int clave) {
         NodoAVL actual = raiz;
         while (actual != null) {
@@ -192,7 +150,7 @@ public class ArbolAVL {
     }
 
     // ------------------------------------------------------------------
-    // Eliminacion (los tres casos)
+    // Eliminación
     // ------------------------------------------------------------------
 
     public boolean eliminar(int clave) {
@@ -214,16 +172,14 @@ public class ArbolAVL {
         } else if (clave > nodo.getClave()) {
             nodo.setDerecho(eliminarRec(nodo.getDerecho(), clave));
         } else {
-            // CASO 1: hoja  -> desaparece
-            // CASO 2: un solo hijo -> lo reemplaza el hijo
+            // Manejo de los tres casos de eliminación (hoja, un hijo o dos hijos)
             if (nodo.getIzquierdo() == null) {
                 return nodo.getDerecho();
             }
             if (nodo.getDerecho() == null) {
                 return nodo.getIzquierdo();
             }
-            // CASO 3: dos hijos -> se reemplaza por el sucesor inorden
-            // (el menor del subarbol derecho) y se elimina ese sucesor.
+            
             NodoAVL sucesor = minimo(nodo.getDerecho());
             NodoAVL reemplazo = new NodoAVL(sucesor.getPublicacion());
             reemplazo.setIzquierdo(nodo.getIzquierdo());
@@ -245,7 +201,7 @@ public class ArbolAVL {
     // Recorridos
     // ------------------------------------------------------------------
 
-    /** Inorden: izquierda - raiz - derecha. Devuelve el feed ordenado por credibilidad. */
+    /** Retorna las publicaciones ordenadas en Inorden (feed del juego). */
     public List<Publicacion> inorden() {
         List<Publicacion> salida = new ArrayList<>();
         inordenRec(raiz, salida);
@@ -253,15 +209,13 @@ public class ArbolAVL {
     }
 
     private void inordenRec(NodoAVL nodo, List<Publicacion> salida) {
-        if (nodo == null) {
-            return;
-        }
+        if (nodo == null) return;
         inordenRec(nodo.getIzquierdo(), salida);
         salida.add(nodo.getPublicacion());
         inordenRec(nodo.getDerecho(), salida);
     }
 
-    /** Preorden: raiz - izquierda - derecha. Sirve para clonar o serializar el arbol. */
+    /** Retorna el árbol en Preorden (ideal para serialización). */
     public List<Publicacion> preorden() {
         List<Publicacion> salida = new ArrayList<>();
         preordenRec(raiz, salida);
@@ -269,15 +223,13 @@ public class ArbolAVL {
     }
 
     private void preordenRec(NodoAVL nodo, List<Publicacion> salida) {
-        if (nodo == null) {
-            return;
-        }
+        if (nodo == null) return;
         salida.add(nodo.getPublicacion());
         preordenRec(nodo.getIzquierdo(), salida);
         preordenRec(nodo.getDerecho(), salida);
     }
 
-    /** Postorden: izquierda - derecha - raiz. Sirve para liberar o cerrar el feed. */
+    /** Retorna el árbol en Postorden. */
     public List<Publicacion> postorden() {
         List<Publicacion> salida = new ArrayList<>();
         postordenRec(raiz, salida);
@@ -285,18 +237,15 @@ public class ArbolAVL {
     }
 
     private void postordenRec(NodoAVL nodo, List<Publicacion> salida) {
-        if (nodo == null) {
-            return;
-        }
+        if (nodo == null) return;
         postordenRec(nodo.getIzquierdo(), salida);
         postordenRec(nodo.getDerecho(), salida);
         salida.add(nodo.getPublicacion());
     }
 
     /**
-     * Consulta por rango: publicaciones con credibilidad por debajo del limite.
-     * Es la habilidad del Periodista dentro del juego. Poda las ramas que no
-     * pueden contener resultados, asi que no recorre el arbol completo.
+     * Consulta optimizada por rango: filtra publicaciones con menor credibilidad
+     * aplicando la habilidad especial del Periodista mediante poda de ramas.
      */
     public List<Publicacion> menosCreiblesQue(int limiteCredibilidad) {
         List<Publicacion> salida = new ArrayList<>();
@@ -305,52 +254,32 @@ public class ArbolAVL {
     }
 
     private void rangoRec(NodoAVL nodo, int claveTope, List<Publicacion> salida) {
-        if (nodo == null) {
-            return;
-        }
+        if (nodo == null) return;
         rangoRec(nodo.getIzquierdo(), claveTope, salida);
         if (nodo.getClave() < claveTope) {
             salida.add(nodo.getPublicacion());
-            rangoRec(nodo.getDerecho(), claveTope, salida); // poda: solo si aun cabe
+            rangoRec(nodo.getDerecho(), claveTope, salida);
         }
     }
 
     // ------------------------------------------------------------------
-    // Estado del arbol
+    // Estado y Validación del Árbol
     // ------------------------------------------------------------------
 
-    public NodoAVL getRaiz() {
-        return raiz;
-    }
+    public NodoAVL getRaiz() { return raiz; }
+    public int getTamano() { return tamano; }
+    public int getAlturaArbol() { return altura(raiz); }
+    public int getRotacionesRealizadas() { return rotacionesRealizadas; }
+    public boolean estaVacio() { return raiz == null; }
 
-    public int getTamano() {
-        return tamano;
-    }
-
-    public int getAlturaArbol() {
-        return altura(raiz);
-    }
-
-    public int getRotacionesRealizadas() {
-        return rotacionesRealizadas;
-    }
-
-    public boolean estaVacio() {
-        return raiz == null;
-    }
-
-    /** Verificacion de invariante AVL: util para las pruebas de la sustentacion. */
+    /** Valida el invariante de balanceo AVL (útil para pruebas y sustentación). */
     public boolean estaBalanceado() {
         return balanceadoRec(raiz);
     }
 
     private boolean balanceadoRec(NodoAVL nodo) {
-        if (nodo == null) {
-            return true;
-        }
-        if (Math.abs(factorEquilibrio(nodo)) > 1) {
-            return false;
-        }
+        if (nodo == null) return true;
+        if (Math.abs(factorEquilibrio(nodo)) > 1) return false;
         return balanceadoRec(nodo.getIzquierdo()) && balanceadoRec(nodo.getDerecho());
     }
 }

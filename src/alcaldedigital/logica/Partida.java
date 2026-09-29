@@ -23,7 +23,7 @@ import java.util.List;
  */
 public class Partida {
 
-    public static final int SEGUNDOS_POR_TURNO = 10;
+    public static final int SEGUNDOS_POR_TURNO = 30;
 
     private final List<Jugador> jugadores;
     private final EstadoCiudad ciudad;
@@ -37,6 +37,10 @@ public class Partida {
     private int indiceJugador;
     private final int totalTurnos;
 
+    /**
+     * Inicializa los componentes de la partida, valida la cantidad de jugadores,
+     * genera el feed y lo distribuye entre el Árbol AVL y la cola de turnos pendientes.
+     */
     public Partida(List<Jugador> jugadores, int publicacionesPorJugador) {
         if (jugadores == null || jugadores.size() < 2 || jugadores.size() > 4) {
             throw new IllegalArgumentException("La partida admite de 2 a 4 jugadores.");
@@ -65,22 +69,27 @@ public class Partida {
     // Flujo de turnos
     // ------------------------------------------------------------------
 
+    /** Verifica si quedan turnos pendientes en la partida. */
     public boolean hayTurnoPendiente() {
         return !pendientes.isEmpty();
     }
 
+    /** Retorna la publicacion correspondiente al turno actual sin removerla. */
     public Publicacion publicacionActual() {
         return pendientes.peekFirst();
     }
 
+    /** Retorna el jugador al que le corresponde tomar la decision en este turno. */
     public Jugador jugadorActual() {
         return jugadores.get(indiceJugador);
     }
 
+    /** Retorna el numero del turno actual (base 1). */
     public int getTurno() {
         return turno + 1;
     }
 
+    /** Retorna el total de turnos programados para la partida. */
     public int getTotalTurnos() {
         return totalTurnos;
     }
@@ -146,6 +155,7 @@ public class Partida {
     // Cierre de la partida
     // ------------------------------------------------------------------
 
+    /** Indica si la partida ha finalizado al vaciarse la cola de publicaciones. */
     public boolean terminada() {
         return pendientes.isEmpty();
     }
@@ -165,6 +175,7 @@ public class Partida {
         return j.getPuntos() + j.getReputacion() * 2;
     }
 
+    /** Retorna el veredicto final de la ciudad en funcion de su salud global. */
     public String veredicto() {
         int salud = ciudad.saludGlobal();
         if (salud >= 75) {
@@ -217,7 +228,7 @@ public class Partida {
         public final String evento;
 
         public ResultadoTurno(Publicacion publicacion, Accion accion, Efecto efecto, int puntos,
-                              int reputacion, String rutaArbol, boolean retirada, String evento) {
+                            int reputacion, String rutaArbol, boolean retirada, String evento) {
             this.publicacion = publicacion;
             this.accion = accion;
             this.efecto = efecto;

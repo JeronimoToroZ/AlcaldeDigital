@@ -5,35 +5,12 @@ import alcaldedigital.modelo.Accion;
 import alcaldedigital.modelo.TipoContenido;
 
 /**
- * ARBOL DE DECISION N-ARIO
+ * ÁRBOL DE DECISIÓN N-ARIO
  * ========================
- *
- * 1. QUE PROBLEMA RESUELVE
- *    Las consecuencias de una decision no dependen solo de lo que hizo el jugador,
- *    sino tambien de lo que la publicacion era REALMENTE (verdadera, falsa u opinion),
- *    dato que el jugador no conoce al decidir. Eso son 4 x 3 = 12 combinaciones.
- *    Meterlas en un if/switch gigante haria el codigo imposible de mantener y de
- *    balancear. El arbol convierte esas reglas en datos: la logica del juego solo
- *    "desciende" por el arbol y aplica la hoja que encuentra.
- *
- * 2. POR QUE N-ARIO Y NO BINARIO
- *    El primer nivel tiene 4 ramas (las 4 acciones) y el segundo 3 (los 3 tipos de
- *    contenido). Un arbol binario obligaria a encadenar decisiones artificiales.
- *    El grado del nodo aqui es el numero real de opciones del jugador.
- *
- * 3. RECORRIDO
- *    - Durante la partida: descenso dirigido, raiz -> accion -> tipo. Cuesta O(grado)
- *      por nivel, es decir constante, contra O(1) de un switch pero con reglas
- *      declarativas y auditables.
- *    - En la pantalla de AYUDA: recorrido en PREORDEN que imprime el arbol completo,
- *      para que el jugador vea todas las consecuencias posibles antes de jugar.
- *
- *              PUBLICACION  (raiz: que quieres hacer?)
- *              /      |       |        \
- *      Compartir  Verificar  Ignorar  Reportar
- *        /|\        /|\       /|\       /|\
- *       V F O      V F O     V F O     V F O      <- que era realmente
- *      (12 hojas = 12 efectos distintos)
+ * Gestiona las combinaciones de consecuencias según la acción del usuario
+ * y la naturaleza real del contenido (verdadera, falsa u opinión).
+ * 
+ * @author Naty
  */
 public class ArbolDecision {
 
@@ -107,8 +84,8 @@ public class ArbolDecision {
     }
 
     /**
-     * DESCENSO: raiz -> accion del jugador -> naturaleza real de la publicacion.
-     * Devuelve el efecto de la hoja alcanzada.
+     * Desciende por el árbol según la acción del usuario y el contenido real
+     * para retornar el efecto correspondiente.
      */
     public Efecto resolver(Accion accion, TipoContenido tipo) {
         NodoDecision nivel1 = raiz.hijoPor(accion);
@@ -122,7 +99,7 @@ public class ArbolDecision {
         return hoja.getEfecto();
     }
 
-    /** Ruta legible de la decision, para mostrar en pantalla. */
+    /** Retorna una ruta legible de la decisión tomada. */
     public String rutaDe(Accion accion, TipoContenido tipo) {
         NodoDecision n1 = raiz.hijoPor(accion);
         NodoDecision n2 = (n1 == null) ? null : n1.hijoPor(tipo);
@@ -130,7 +107,7 @@ public class ArbolDecision {
                 + " -> " + (n2 == null ? "?" : n2.getEtiqueta());
     }
 
-    /** Recorrido en PREORDEN: raiz, luego cada subarbol de izquierda a derecha. */
+    /** Recorrido en PREORDEN para mostrar el árbol completo en pantallas de ayuda. */
     public String recorridoPreorden() {
         StringBuilder sb = new StringBuilder();
         preorden(raiz, 0, sb);
@@ -138,19 +115,25 @@ public class ArbolDecision {
     }
 
     private void preorden(NodoDecision nodo, int nivel, StringBuilder sb) {
-        sb.append("   ".repeat(nivel));
+        // Reemplazo de String.repeat() compatible con JDK 8 mediante un bucle
+        for (int i = 0; i < nivel; i++) {
+            sb.append("   ");
+        }
+        
         sb.append(nivel == 0 ? "" : "|- ");
         sb.append(nodo.getEtiqueta());
+        
         if (nodo.esHoja()) {
             sb.append("   =>  ").append(nodo.getEfecto().resumenDeltas());
         }
         sb.append('\n');
+        
         for (NodoDecision h : nodo.getHijos()) {
             preorden(h, nivel + 1, sb);
         }
     }
 
-    /** Cuenta de nodos, util para la sustentacion. */
+    /** Retorna el conteo total de nodos del árbol. */
     public int cantidadNodos() {
         return contar(raiz);
     }

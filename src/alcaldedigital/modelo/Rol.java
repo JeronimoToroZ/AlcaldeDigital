@@ -1,23 +1,23 @@
 package alcaldedigital.modelo;
 
 /**
- * Roles jugables. Cada rol aplica multiplicadores distintos sobre el efecto que
- * devuelve el arbol de decision, de modo que la misma accion no vale lo mismo
+ * Roles jugables de la partida. Cada rol aplica multiplicadores distintos sobre el efecto que
+ * devuelve el árbol de decisión, de modo que la misma acción no vale lo mismo
  * para todos los jugadores.
  *
- * multiplicadorCiudad  -> cuanto pesa su accion sobre los indicadores de la ciudad.
- * multiplicadorReputacion -> cuanto gana o pierde el jugador en reputacion.
- * bonificacionVerificar -> refuerzo extra cuando la accion elegida es VERIFICAR.
+ * - multiplicadorCiudad: cuánto pesa su acción sobre los indicadores de la ciudad.
+ * - multiplicadorReputacion: cuánto gana o pierde el jugador en reputación.
+ * - bonificacionVerificar: refuerzo extra cuando la acción elegida es VERIFICAR.
  */
 public enum Rol {
     CIUDADANO("Ciudadano", 1.0, 1.0, 1.0,
-            "Interactua de forma responsable con lo que recibe."),
+            "Interactúa de forma responsable con lo que recibe."),
     PERIODISTA("Periodista", 1.0, 1.2, 1.8,
-            "Verificar le cuesta menos y le rinde mucho mas."),
+            "Verificar le cuesta menos y le rinde mucho más."),
     INFLUENCER("Influencer", 2.0, 1.0, 1.0,
             "Todo lo que toca se amplifica: para bien y para mal."),
     CANDIDATO("Candidato a alcalde", 1.2, 1.8, 1.0,
-            "Su reputacion es su campana. Gana o pierde el doble.");
+            "Su reputación es su campaña. Gana o pierde el doble.");
 
     private final String etiqueta;
     private final double multiplicadorCiudad;
@@ -53,7 +53,7 @@ public enum Rol {
         return descripcion;
     }
 
-    /** Se muestra asi en los combos de la interfaz. */
+    /** Se muestra así en los combos de la interfaz. */
     @Override
     public String toString() {
         return etiqueta;

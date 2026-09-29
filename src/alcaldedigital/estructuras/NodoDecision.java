@@ -5,12 +5,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Nodo de un arbol N-ARIO de decision.
+ * Representa un nodo dentro del Árbol N-ario de Decisión.
  *
- * - Los nodos internos guardan una pregunta y una lista de hijos.
- * - Las hojas guardan un Efecto (la consecuencia concreta sobre la ciudad).
- * - "clave" es la etiqueta por la que se llega a este nodo desde su padre:
- *   en el primer nivel es una Accion del jugador y en el segundo un TipoContenido.
+ * Estructura: - Nodos internos: almacenan una pregunta y una lista de opciones
+ * hijas. - Hojas: almacenan un objeto Efecto con las consecuencias concretas
+ * sobre la ciudad. - Clave: etiqueta de transición (Acción del jugador o Tipo
+ * de Contenido).
+ *
+ * @author Naty
  */
 public class NodoDecision {
 
@@ -20,7 +22,9 @@ public class NodoDecision {
     private final Efecto efecto;     // null si es nodo interno
     private final List<NodoDecision> hijos;
 
-    /** Constructor de nodo interno. */
+    /**
+     * Constructor para un nodo interno (contiene preguntas y sub-ramas).
+     */
     public NodoDecision(Object clave, String etiqueta, String pregunta) {
         this.clave = clave;
         this.etiqueta = etiqueta;
@@ -29,7 +33,9 @@ public class NodoDecision {
         this.hijos = new ArrayList<>();
     }
 
-    /** Constructor de hoja. */
+    /**
+     * Constructor para una hoja (contiene el efecto final de la decisión).
+     */
     public NodoDecision(Object clave, String etiqueta, Efecto efecto) {
         this.clave = clave;
         this.etiqueta = etiqueta;
@@ -38,12 +44,19 @@ public class NodoDecision {
         this.hijos = new ArrayList<>();
     }
 
+    /**
+     * Agrega una nueva rama hija al nodo actual y retorna la instancia para
+     * encadenamiento.
+     */
     public NodoDecision agregarHijo(NodoDecision hijo) {
         hijos.add(hijo);
         return this;
     }
 
-    /** Baja un nivel siguiendo la etiqueta indicada. Null si no existe esa rama. */
+    /**
+     * Desciende al siguiente nivel buscando la rama que coincida con la clave
+     * indicada.
+     */
     public NodoDecision hijoPor(Object claveBuscada) {
         for (NodoDecision h : hijos) {
             if (claveBuscada.equals(h.clave)) {
@@ -53,10 +66,17 @@ public class NodoDecision {
         return null;
     }
 
+    /**
+     * Verifica si el nodo actual es una hoja evaluando si posee un efecto
+     * asignado.
+     */
     public boolean esHoja() {
         return efecto != null;
     }
 
+    // ------------------------------------------------------------------
+    // Métodos Getters de los atributos del nodo
+    // ------------------------------------------------------------------
     public Object getClave() {
         return clave;
     }

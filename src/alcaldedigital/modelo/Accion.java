@@ -16,6 +16,9 @@ public enum Accion {
         this.etiqueta = etiqueta;
     }
 
+    /**
+     * Retorna la etiqueta descriptiva legible de la accion.
+     */
     public String getEtiqueta() {
         return etiqueta;
     }

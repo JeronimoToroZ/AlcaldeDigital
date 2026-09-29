@@ -13,20 +13,11 @@ import java.util.Map;
 import javax.swing.JPanel;
 
 /**
- * VISUALIZACION DEL ARBOL AVL
- * ===========================
- * Dibuja el arbol real, no una maqueta: cada circulo es un NodoAVL vivo del feed.
- *
- * Posicionamiento: la coordenada X de cada nodo se asigna con un recorrido
- * INORDEN (el k-esimo nodo visitado ocupa la columna k) y la Y depende de su
- * profundidad. Ese truco garantiza que dos nodos nunca se solapen.
- *
- * El dibujo se hace en dos pasadas: primero las aristas y despues los nodos,
- * para que las lineas queden por debajo de los circulos.
- *
- * Dentro de cada nodo se muestra la credibilidad y, debajo, el factor de
- * equilibrio. Asi, en la sustentacion, se ve en vivo como el arbol se rebalancea
- * cuando se elimina una publicacion reportada.
+ * Panel gráfico para la visualización en tiempo real del Árbol AVL.
+ * Dibuja los nodos activos del feed evitando solapamientos mediante un 
+ * posicionamiento basado en recorrido Inorden (columnas) y profundidad (filas).
+ * 
+ * @author Naty
  */
 public class PanelArbolAVL extends JPanel {
 
@@ -40,6 +31,9 @@ public class PanelArbolAVL extends JPanel {
     private final Map<NodoAVL, Point> posiciones = new IdentityHashMap<>();
     private int columna;
 
+    /**
+     * Inicializa el panel configurando el árbol a renderizar y el color de fondo.
+     */
     public PanelArbolAVL(ArbolAVL arbol) {
         this.arbol = arbol;
         setBackground(Tema.panel());
@@ -52,7 +46,9 @@ public class PanelArbolAVL extends JPanel {
         return new Dimension(ancho, alto);
     }
 
-    /** Pasada 1: recorrido inorden que asigna una columna a cada nodo. */
+    /**
+     * Pasada 1: Recorrido Inorden que asigna una columna única a cada nodo para evitar solapamientos.
+     */
     private void calcularPosiciones(NodoAVL nodo, int profundidad) {
         if (nodo == null) {
             return;
@@ -64,7 +60,9 @@ public class PanelArbolAVL extends JPanel {
         calcularPosiciones(nodo.getDerecho(), profundidad + 1);
     }
 
-    /** Pasada 2a: aristas. */
+    /**
+     * Pasada 2a: Dibuja las aristas o líneas que conectan a los nodos con sus hijos.
+     */
     private void dibujarAristas(Graphics2D g2, NodoAVL nodo) {
         if (nodo == null) {
             return;
@@ -82,7 +80,10 @@ public class PanelArbolAVL extends JPanel {
         dibujarAristas(g2, nodo.getDerecho());
     }
 
-    /** Pasada 2b: nodos. */
+    /**
+     * Pasada 2b: Dibuja los círculos de los nodos, sus identificadores, 
+     * los niveles de credibilidad y el factor de equilibrio (FE).
+     */
     private void dibujarNodos(Graphics2D g2, NodoAVL nodo) {
         if (nodo == null) {
             return;
@@ -90,6 +91,7 @@ public class PanelArbolAVL extends JPanel {
         Point p = posiciones.get(nodo);
         int fe = arbol.factorEquilibrio(nodo);
 
+        // Relleno y borde del nodo según su estado de equilibrio
         g2.setColor(Tema.nodo());
         g2.fillOval(p.x - RADIO, p.y - RADIO, RADIO * 2, RADIO * 2);
 
@@ -97,6 +99,7 @@ public class PanelArbolAVL extends JPanel {
         g2.setStroke(new BasicStroke(Math.abs(fe) >= 2 ? 4f : 2f));
         g2.drawOval(p.x - RADIO, p.y - RADIO, RADIO * 2, RADIO * 2);
 
+        // Textos descriptivos dentro y alrededor del nodo
         g2.setColor(Tema.texto());
         g2.setFont(Tema.normal());
         String etiqueta = String.valueOf(nodo.getPublicacion().getCredibilidad());
@@ -114,6 +117,10 @@ public class PanelArbolAVL extends JPanel {
         dibujarNodos(g2, nodo.getDerecho());
     }
 
+    /**
+     * Renderiza el componente gráfico completo, incluyendo encabezados informativos, 
+     * estadísticas del árbol y las dos pasadas de dibujo estructural.
+     */
     @Override
     protected void paintComponent(Graphics g) {
         setBackground(Tema.panel());
@@ -121,6 +128,7 @@ public class PanelArbolAVL extends JPanel {
         Graphics2D g2 = (Graphics2D) g;
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
+        // Textos informativos y métricas en la parte superior del panel
         g2.setColor(Tema.texto());
         g2.setFont(Tema.subtitulo());
         g2.drawString("Feed de Civitas ordenado por credibilidad (arbol AVL)", 20, 28);
@@ -139,6 +147,7 @@ public class PanelArbolAVL extends JPanel {
             return;
         }
 
+        // Ejecución del cálculo de coordenadas y renderizado por capas
         posiciones.clear();
         columna = 0;
         calcularPosiciones(arbol.getRaiz(), 0);

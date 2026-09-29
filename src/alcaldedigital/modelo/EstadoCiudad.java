@@ -17,6 +17,10 @@ public class EstadoCiudad {
         return Math.max(0, Math.min(100, valor));
     }
 
+    /**
+     * Aplica los deltas correspondientes sobre cada uno de los indicadores de la ciudad,
+     * asegurando que se mantengan dentro del rango válido de 0 a 100.
+     */
     public void aplicar(int dInfo, int dConf, int dConv, int dBien, int dDesinfo, int dConflictos) {
         informacionVerificada = limitar(informacionVerificada + dInfo);
         confianza = limitar(confianza + dConf);
@@ -36,26 +40,44 @@ public class EstadoCiudad {
         return limitar((int) Math.round(positivos - negativos));
     }
 
+    /**
+     * Retorna el nivel actual de información verificada.
+     */
     public int getInformacionVerificada() {
         return informacionVerificada;
     }
 
+    /**
+     * Retorna el nivel actual de confianza.
+     */
     public int getConfianza() {
         return confianza;
     }
 
+    /**
+     * Retorna el nivel actual de convivencia.
+     */
     public int getConvivencia() {
         return convivencia;
     }
 
+    /**
+     * Retorna el nivel actual de bienestar digital.
+     */
     public int getBienestarDigital() {
         return bienestarDigital;
     }
 
+    /**
+     * Retorna el nivel actual de desinformación.
+     */
     public int getDesinformacion() {
         return desinformacion;
     }
 
+    /**
+     * Retorna el nivel actual de conflictos.
+     */
     public int getConflictos() {
         return conflictos;
     }

@@ -1,19 +1,19 @@
 package alcaldedigital.modelo;
 
 /**
- * Una publicacion del feed de Civitas.
+ * Una publicación del feed de Ciudad Nova.
  *
  * CLAVE DEL AVL
  * -------------
- * El arbol AVL ordena las publicaciones por credibilidad, porque la consulta que
- * mas usa el juego es "dame las publicaciones menos creibles del feed".
+ * El árbol AVL ordena las publicaciones por credibilidad, porque la consulta que
+ * más usa el juego es "dame las publicaciones menos creíbles del feed".
  * El problema es que la credibilidad se repite (dos publicaciones pueden tener 30),
- * y un ABB/AVL clasico no admite claves duplicadas.
+ * y un ABB/AVL clásico no admite claves duplicadas.
  *
- * Solucion: clave compuesta = credibilidad * 1000 + id.
- * Como el id es unico y siempre menor que 1000, la clave nunca se repite y, al
+ * Solución: clave compuesta = credibilidad * 1000 + id.
+ * Como el id es único y siempre menor que 1000, la clave nunca se repite y, al
  * dividir por 1000, el orden sigue siendo exactamente el orden por credibilidad.
- * Un recorrido inorden devuelve el feed ordenado de menos a mas creible.
+ * Un recorrido inorden devuelve el feed ordenado de menos a más creíble.
  */
 public class Publicacion {
 
@@ -25,6 +25,10 @@ public class Publicacion {
     private boolean verificada;
     private boolean retirada;
 
+    /**
+     * Constructor principal. Valida que el ID esté entre 0 y 999 
+     * para garantizar que la clave compuesta del AVL funcione bien.
+     */
     public Publicacion(int id, String texto, String autor, TipoContenido tipo, int credibilidad) {
         if (id < 0 || id > 999) {
             throw new IllegalArgumentException("El id debe estar entre 0 y 999 para que la clave compuesta funcione.");
@@ -38,7 +42,7 @@ public class Publicacion {
         this.retirada = false;
     }
 
-    /** Clave unica y ordenada por credibilidad que usa el AVL. */
+    /** Retorna la clave única y ordenada por credibilidad que usa el AVL. */
     public int claveAVL() {
         return credibilidad * 1000 + id;
     }

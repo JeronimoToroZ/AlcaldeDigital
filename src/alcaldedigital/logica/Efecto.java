@@ -21,6 +21,9 @@ public class Efecto {
     private final String mensaje;
     private final boolean retirarPublicacion;
 
+    /**
+     * Constructor para inicializar todos los atributos del efecto de una decision.
+     */
     public Efecto(int dInfoVerificada, int dConfianza, int dConvivencia, int dBienestar,
                   int dDesinformacion, int dConflictos, int puntos, int reputacion,
                   String mensaje, boolean retirarPublicacion) {
@@ -58,19 +61,31 @@ public class Efecto {
                 escalar(dConflictos, f));
     }
 
+    /**
+     * Calcula los puntos obtenidos ajustados segun el rol del jugador y si hubo verificacion.
+     */
     public int puntosPara(Rol rol, boolean fueVerificacion) {
         double f = fueVerificacion ? rol.getBonificacionVerificar() : 1.0;
         return escalar(puntos, f);
     }
 
+    /**
+     * Calcula la reputacion obtenida ajustada segun el multiplicador del rol.
+     */
     public int reputacionPara(Rol rol) {
         return escalar(reputacion, rol.getMultiplicadorReputacion());
     }
 
+    /**
+     * Retorna el mensaje de retroalimentacion asociado al efecto.
+     */
     public String getMensaje() {
         return mensaje;
     }
 
+    /**
+     * Indica si la publicacion debe ser retirada del sistema tras la decision.
+     */
     public boolean debeRetirarPublicacion() {
         return retirarPublicacion;
     }

@@ -4,15 +4,14 @@ import java.awt.Color;
 import java.awt.Font;
 
 /**
- * COMPONENTE INCLUSIVO
- * ====================
- * Paleta centralizada con un modo de ALTO CONTRASTE conmutable en caliente.
- *
- * Dificultad que atiende: baja vision y daltonismo. En el modo normal la
- * informacion se apoya en color (verde = bien, rojo = mal); en alto contraste
- * se sube la relacion de contraste por encima de 7:1 sobre fondo negro y, ademas,
- * NINGUN dato depende solo del color: los indicadores llevan siempre su valor
- * numerico y un simbolo (+ / -), y las barras cambian de patron ademas de tono.
+ * Componente inclusivo que centraliza la paleta de colores y tipografías del sistema,
+ * permitiendo alternar en caliente a un modo de alto contraste para atender
+ * requerimientos de accesibilidad (baja visión y daltonismo).
+ * 
+ * Garantiza que la información nunca dependa exclusivamente del color, 
+ * combinando altos índices de contraste, patrones visuales y símbolos numéricos.
+ * 
+ * @author Naty
  */
 public final class Tema {
 
@@ -21,13 +20,23 @@ public final class Tema {
     private Tema() {
     }
 
+    /**
+     * Activa o desactiva globalmente el modo de alto contraste en la interfaz gráfica.
+     */
     public static void setAltoContraste(boolean valor) {
         altoContraste = valor;
     }
 
+    /**
+     * Consulta si el modo de alto contraste se encuentra actualmente habilitado.
+     */
     public static boolean isAltoContraste() {
         return altoContraste;
     }
+
+    // ------------------------------------------------------------------
+    // Configuración de colores para fondos, paneles y estructuras de texto
+    // ------------------------------------------------------------------
 
     public static Color fondo() {
         return altoContraste ? Color.BLACK : new Color(24, 28, 38);
@@ -49,6 +58,10 @@ public final class Tema {
         return altoContraste ? Color.WHITE : new Color(62, 72, 94);
     }
 
+    // ------------------------------------------------------------------
+    // Colores funcionales y de estado (acento, positivos y negativos)
+    // ------------------------------------------------------------------
+
     public static Color acento() {
         return altoContraste ? new Color(255, 255, 0) : new Color(90, 160, 255);
     }
@@ -65,6 +78,10 @@ public final class Tema {
         return altoContraste ? Color.BLACK : new Color(48, 58, 78);
     }
 
+    // ------------------------------------------------------------------
+    // Definición de tipografías dinámicas adaptadas al modo activo
+    // ------------------------------------------------------------------
+
     public static Font titulo() {
         return new Font("SansSerif", Font.BOLD, altoContraste ? 22 : 20);
     }
@@ -77,8 +94,10 @@ public final class Tema {
         return new Font("SansSerif", Font.PLAIN, altoContraste ? 16 : 14);
     }
 
-    /** Fuente de las etiquetas de indicadores: en negrita y de tamano estable,
-     *  para que el modo de alto contraste no desborde las barras. */
+    /**
+     * Fuente para las etiquetas de indicadores (en negrita y tamaño controlado),
+     * asegurando que el modo de alto contraste no provoque desbordamientos en las barras.
+     */
     public static Font indicador() {
         return new Font("SansSerif", Font.BOLD, altoContraste ? 14 : 13);
     }

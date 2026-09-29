@@ -3,11 +3,14 @@ package alcaldedigital.estructuras;
 import alcaldedigital.modelo.Publicacion;
 
 /**
- * Nodo del arbol AVL de publicaciones.
- *
- * CONVENCION DE ALTURA: la altura de un nodo hoja es 0 y la de un subarbol vacio
- * es -1. Con esa convencion el factor de equilibrio se calcula restando
- * directamente las alturas de los hijos.
+ * Representa un nodo individual dentro del Árbol AVL de publicaciones.
+ * Almacena los apuntadores a sus subárboles, su clave de ordenamiento, 
+ * los datos de la publicación y su respectiva altura para el control de balanceo.
+ * 
+ * Convención de altura: un nodo hoja mide 0 y un subárbol vacío mide -1, 
+ * lo que permite calcular el factor de equilibrio directamente restando alturas.
+ * 
+ * @author Naty
  */
 public class NodoAVL {
 
@@ -17,13 +20,21 @@ public class NodoAVL {
     private NodoAVL derecho;
     private int altura;
 
+    /**
+     * Constructor del nodo. Asigna la publicación correspondiente,
+     * extrae su clave numérica para el árbol y lo inicializa como hoja (altura 0).
+     */
     public NodoAVL(Publicacion publicacion) {
         this.publicacion = publicacion;
         this.clave = publicacion.claveAVL();
         this.izquierdo = null;
         this.derecho = null;
-        this.altura = 0; // una hoja mide 0
+        this.altura = 0;
     }
+
+    // ------------------------------------------------------------------
+    // Métodos Getters y Setters de los datos y enlaces del nodo
+    // ------------------------------------------------------------------
 
     public int getClave() {
         return clave;
@@ -61,6 +72,9 @@ public class NodoAVL {
         this.altura = altura;
     }
 
+    /**
+     * Verifica si el nodo actual es una hoja (no posee hijos en ninguna dirección).
+     */
     public boolean esHoja() {
         return izquierdo == null && derecho == null;
     }

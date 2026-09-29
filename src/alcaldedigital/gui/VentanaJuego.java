@@ -26,7 +26,13 @@ import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 
-/** Ventana principal: tablero, arbol AVL en vivo, arbol de decision y ayuda. */
+/**
+ * Ventana principal del juego (Tablero central). Gestiona la interfaz gráfica,
+ * las pestañas de visualización del Árbol AVL en vivo, el Árbol de Decisiones,
+ * la sección de ayuda, el cronómetro de turnos y la aplicación de temas visuales.
+ * 
+ * @author Naty
+ */
 public class VentanaJuego extends JFrame {
 
     private final Partida partida;
@@ -48,6 +54,10 @@ public class VentanaJuego extends JFrame {
     private Timer cronometro;
     private int segundosRestantes;
 
+    /**
+     * Inicializa la ventana del juego configurando los componentes principales,
+     * la estructura de pestañas y cargando el primer turno de la partida.
+     */
     public VentanaJuego(Partida partida) {
         this.partida = partida;
         this.panelIndicadores = new PanelIndicadores(partida.getCiudad());
@@ -228,7 +238,7 @@ public class VentanaJuego extends JFrame {
         sb.append("LOS CUATRO BOTONES\n");
         sb.append("COMPARTIR - la difundes. Si era verdadera, informas; si era falsa, propagas el dano.\n");
         sb.append("VERIFICAR - revisas antes de actuar. Es la accion mas segura y la que mas puntos da.\n");
-        sb.append("IGNORAR   - la dejas pasar. No hace dano, pero tampoco ayuda.\n");
+        sb.append("IGNORAR  - la dejas pasar. No hace dano, pero tampoco ayuda.\n");
         sb.append("REPORTAR  - la sacas del feed. Excelente contra lo falso, grave si era cierto u opinion.\n\n");
 
         sb.append("LOS ROLES\n");
@@ -359,6 +369,10 @@ public class VentanaJuego extends JFrame {
         areaBitacora.setCaretPosition(areaBitacora.getDocument().getLength());
     }
 
+    /**
+     * Finaliza la partida al agotarse los turnos, mostrando el resumen final de la campaña,
+     * el alcalde electo, las estadísticas de los jugadores y la salud global de Ciudad Nova.
+     */
     private void finalizar() {
         habilitarBotones(false);
         lblTiempo.setText("Campana cerrada");
@@ -387,7 +401,7 @@ public class VentanaJuego extends JFrame {
     // Tema
     // ------------------------------------------------------------------
 
-    /** Borde con titulo legible en cualquiera de los dos temas. */
+    /** Genera un borde con título legible adaptado al tema visual activo. */
     private static javax.swing.border.Border bordeTitulado(String titulo) {
         javax.swing.border.TitledBorder b = BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(Tema.borde(), 1), titulo);
@@ -399,15 +413,6 @@ public class VentanaJuego extends JFrame {
     private void aplicarTema() {
         pintar(getContentPane());
         lblTiempo.setForeground(Tema.texto());
-
-        // las pestanas tambien deben respetar el tema
-        pestanas.setForeground(Tema.texto());
-        for (int i = 0; i < pestanas.getTabCount(); i++) {
-            pestanas.setBackgroundAt(i, Tema.panel());
-            pestanas.setForegroundAt(i, Tema.texto());
-        }
-
-        // los bordes con titulo se reconstruyen para que cambien de color
         if (scrollMarcador != null) {
             scrollMarcador.setBorder(bordeTitulado("Jugadores"));
         }
@@ -418,20 +423,22 @@ public class VentanaJuego extends JFrame {
         if (c instanceof JPanel || c instanceof JTabbedPane) {
             c.setBackground(Tema.fondo());
         }
-        if (c instanceof JTextArea || c instanceof JButton || c instanceof JCheckBox
+        if (c instanceof JTextArea || c instanceof JCheckBox
                 || c instanceof javax.swing.JViewport || c instanceof JScrollPane) {
             c.setBackground(Tema.panel());
         }
         if (c instanceof JScrollPane) {
             ((JScrollPane) c).getViewport().setBackground(Tema.panel());
         }
-        if (c instanceof JLabel || c instanceof JTextArea || c instanceof JButton
-                || c instanceof JCheckBox) {
+        if (c instanceof JLabel || c instanceof JTextArea || c instanceof JCheckBox) {
             c.setForeground(Tema.texto());
         }
         if (c instanceof JButton) {
-            ((JButton) c).setOpaque(true);
-            ((JButton) c).setBorder(BorderFactory.createLineBorder(Tema.borde(), 2));
+            JButton btn = (JButton) c;
+            btn.setOpaque(true);
+            btn.setBackground(Tema.panel());
+            btn.setForeground(Tema.texto());
+            btn.setBorder(BorderFactory.createLineBorder(Tema.borde(), 2));
         }
         if (c instanceof JLabel) {
             ((JLabel) c).setHorizontalAlignment(SwingConstants.LEFT);
@@ -443,7 +450,7 @@ public class VentanaJuego extends JFrame {
         }
     }
 
-    /** Color de fondo usado por los scroll internos. */
+    /** Retorna el color de fondo utilizado por los paneles de desplazamiento internos. */
     public static Color fondoScroll() {
         return Tema.panel();
     }
