@@ -94,8 +94,8 @@ public class PanelArbolAVL extends JPanel {
  
         // Sombra suave (solo en modo normal)
         if (!Tema.isAltoContraste()) {
-            g2.setColor(new Color(0, 0, 0, 80));
-            g2.fillOval(p.x - RADIO + 2, p.y - RADIO + 4, RADIO * 2, RADIO * 2);
+            g2.setColor(Tema.borde());
+            g2.fillOval(p.x - RADIO + 3, p.y - RADIO + 3, RADIO * 2, RADIO * 2);
         }
  
         // Relleno del nodo
@@ -104,7 +104,7 @@ public class PanelArbolAVL extends JPanel {
  
         // Borde según su estado de equilibrio
         g2.setColor(fe == 0 ? Tema.acento() : (Math.abs(fe) == 1 ? Tema.positivo() : Tema.negativo()));
-        g2.setStroke(new BasicStroke(Math.abs(fe) >= 2 ? 4f : 2.4f));
+        g2.setStroke(new BasicStroke(Math.abs(fe) >= 2 ? 5f : 3f));
         g2.drawOval(p.x - RADIO, p.y - RADIO, RADIO * 2, RADIO * 2);
  
         // Credibilidad dentro del nodo
@@ -186,4 +186,3 @@ public class PanelArbolAVL extends JPanel {
         dibujarNodos(g2, arbol.getRaiz());
     }
 }
- 

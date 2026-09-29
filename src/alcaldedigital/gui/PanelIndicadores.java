@@ -42,7 +42,11 @@ public class PanelIndicadores extends JPanel {
         // Título principal del panel de estado
         g2.setColor(Tema.texto());
         g2.setFont(Tema.subtitulo());
-        g2.drawString("Estado de Ciudad Nova", 14, 26);
+        g2.drawString("ESTADO DE CIUDAD NOVA", 14, 26);
+        g2.setColor(Tema.borde());
+        g2.setStroke(new java.awt.BasicStroke(2f));
+        g2.drawLine(14, 34, getWidth() - 14, 34);
+        g2.setStroke(new java.awt.BasicStroke(1f));
  
         String[] nombres = {"Información verificada", "Confianza ciudadana", "Convivencia",
                             "Bienestar digital", "Desinformación", "Conflictos"};
@@ -87,6 +91,12 @@ public class PanelIndicadores extends JPanel {
         g2.setFont(Tema.subtitulo());
         g2.setColor(Tema.acento());
         g2.drawString("Salud global: " + ciudad.saludGlobal() + "/100", 16, y + 10);
+ 
+        // Marco de tinta alrededor del panel
+        g2.setColor(Tema.borde());
+        g2.setStroke(new java.awt.BasicStroke(2f));
+        g2.drawRect(1, 1, getWidth() - 2, getHeight() - 2);
+        g2.setStroke(new java.awt.BasicStroke(1f));
     }
 }
  

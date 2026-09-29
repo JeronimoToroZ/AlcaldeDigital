@@ -83,6 +83,7 @@ public class VentanaJuego extends JFrame {
         pestanas.setUI(new Tema.PestanasUI());
         pestanas.setFocusable(false);
         pestanas.addTab("Partida", construirPestanaPartida());
+        pestanas.addTab("Ciudad y jugadores", construirPestanaCiudad());
         pestanas.addTab("Árbol AVL del feed", scrollArbol);
         pestanas.addTab("Árbol de decisión", construirPestanaDecision());
         pestanas.addTab("Ayuda", construirPestanaAyuda());
@@ -141,7 +142,7 @@ public class VentanaJuego extends JFrame {
  
         // --- tarjeta de la publicacion ---
         Tema.Tarjeta tarjeta = new Tema.Tarjeta(new BorderLayout(8, 8), 20);
-        tarjeta.setBorder(BorderFactory.createEmptyBorder(22, 24, 22, 24));
+        tarjeta.setBorder(BorderFactory.createEmptyBorder(22, 26, 30, 32));
  
         lblJugador.setFont(Tema.subtitulo());
         lblAutor.setFont(Tema.normal());
@@ -194,24 +195,29 @@ public class VentanaJuego extends JFrame {
         scrollBitacora.setBorder(bordeTitulado("Consecuencias y eventos"));
         Tema.estilizarScroll(scrollBitacora);
  
-        // --- lateral ---
+        raiz.add(centro, BorderLayout.CENTER);
+        raiz.add(scrollBitacora, BorderLayout.SOUTH);
+        return raiz;
+    }
+ 
+    /** Pestaña con el estado de Ciudad Nova (indicadores) y el marcador de jugadores. */
+    private JPanel construirPestanaCiudad() {
         areaMarcador.setEditable(false);
         areaMarcador.setFont(Tema.mono());
-        areaMarcador.setMargin(new java.awt.Insets(4, 8, 4, 8));
+        areaMarcador.setMargin(new java.awt.Insets(10, 14, 10, 14));
         scrollMarcador = new JScrollPane(areaMarcador);
         scrollMarcador.setBorder(bordeTitulado("Jugadores"));
-        scrollMarcador.setPreferredSize(new Dimension(300, 130));
         Tema.estilizarScroll(scrollMarcador);
  
-        JPanel lateral = new JPanel(new BorderLayout(0, 14));
-        lateral.setOpaque(false);
-        lateral.setPreferredSize(new Dimension(330, 100));
-        lateral.add(panelIndicadores, BorderLayout.CENTER);
-        lateral.add(scrollMarcador, BorderLayout.SOUTH);
+        panelIndicadores.setPreferredSize(new Dimension(400, 300));
+        JPanel izquierda = new JPanel(new BorderLayout());
+        izquierda.setOpaque(false);
+        izquierda.add(panelIndicadores, BorderLayout.NORTH);
  
-        raiz.add(centro, BorderLayout.CENTER);
-        raiz.add(lateral, BorderLayout.EAST);
-        raiz.add(scrollBitacora, BorderLayout.SOUTH);
+        JPanel raiz = new JPanel(new BorderLayout(16, 16));
+        raiz.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        raiz.add(izquierda, BorderLayout.WEST);
+        raiz.add(scrollMarcador, BorderLayout.CENTER);
         return raiz;
     }
  
@@ -439,8 +445,8 @@ public class VentanaJuego extends JFrame {
     /** Genera un borde con título legible adaptado al tema visual activo. */
     private static javax.swing.border.Border bordeTitulado(String titulo) {
         javax.swing.border.TitledBorder b = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(Tema.borde(), 1), "  " + titulo + "  ");
-        b.setTitleColor(Tema.textoSuave());
+                BorderFactory.createLineBorder(Tema.borde(), 2), "  " + titulo.toUpperCase() + "  ");
+        b.setTitleColor(Tema.texto());
         b.setTitleFont(Tema.indicadorNegrita());
         return b;
     }
@@ -462,15 +468,22 @@ public class VentanaJuego extends JFrame {
         pestanas.setFont(Tema.subtitulo());
  
         // Colores específicos
-        lblTitulo.setForeground(Tema.acento());
+        lblTitulo.setForeground(Tema.texto());
         lblTurno.setForeground(Tema.textoSuave());
         lblAutor.setForeground(Tema.textoSuave());
         lblCredibilidad.setForeground(Tema.textoSuave());
         lblTiempo.setForeground(Tema.texto());
  
         barraSuperior.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, Tema.borde()),
-                BorderFactory.createEmptyBorder(14, 20, 14, 20)));
+                BorderFactory.createMatteBorder(0, 0, 4, 0, Tema.borde()),
+                BorderFactory.createEmptyBorder(12, 20, 12, 20)));
+ 
+        // Cronómetro como "sello" con fondo de marcador fluorescente
+        lblTiempo.setOpaque(true);
+        lblTiempo.setBackground(Tema.resaltado());
+        lblTiempo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(Tema.borde(), 3),
+                BorderFactory.createEmptyBorder(3, 12, 3, 12)));
  
         if (scrollMarcador != null) {
             scrollMarcador.setBorder(bordeTitulado("Jugadores"));

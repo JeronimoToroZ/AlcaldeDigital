@@ -176,6 +176,7 @@ public class ArbolAVL {
             if (nodo.getIzquierdo() == null) {
                 return nodo.getDerecho();
             }
+      
             if (nodo.getDerecho() == null) {
                 return nodo.getIzquierdo();
             }

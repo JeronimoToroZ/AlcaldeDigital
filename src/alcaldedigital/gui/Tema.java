@@ -1,8 +1,13 @@
 package alcaldedigital.gui;
  
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
+import java.awt.Dialog;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
@@ -12,6 +17,7 @@ import java.awt.Insets;
 import java.awt.LayoutManager;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.Arrays;
@@ -21,9 +27,11 @@ import java.util.function.Supplier;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.plaf.basic.BasicScrollBarUI;
 import javax.swing.plaf.basic.BasicTabbedPaneUI;
@@ -33,11 +41,10 @@ import javax.swing.plaf.basic.BasicTabbedPaneUI;
  * permitiendo alternar en caliente a un modo de alto contraste para atender
  * requerimientos de accesibilidad (baja visión y daltonismo).
  *
- * Garantiza que la información nunca dependa exclusivamente del color,
- * combinando altos índices de contraste, patrones visuales y símbolos numéricos.
- *
- * Además incluye componentes visuales reutilizables: Tarjeta, Boton, PestanasUI
- * y barras de desplazamiento delgadas.
+ * Estilo visual: "periódico / prensa" (papel crema, tinta negra, tipografía serif,
+ * bordes gruesos y sombras duras). Garantiza que la información nunca dependa
+ * exclusivamente del color, combinando altos índices de contraste, patrones
+ * visuales y símbolos numéricos.
  *
  * @author Naty
  */
@@ -45,11 +52,14 @@ public final class Tema {
  
     private static boolean altoContraste = false;
  
+    /** Grosor de la sombra dura de tarjetas y botones. */
+    private static final int SOMBRA = 5;
+ 
     /** Familias tipográficas: se usa la primera que exista en el sistema. */
     private static final String FAMILIA = elegirFuente(
-            "Segoe UI", "Inter", "SF Pro Text", "Helvetica Neue", "Ubuntu", "Roboto", "SansSerif");
+            "Georgia", "Cambria", "Palatino Linotype", "Book Antiqua", "Times New Roman", "Serif");
     private static final String FAMILIA_MONO = elegirFuente(
-            "JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", "Monospaced");
+            "Courier New", "Courier Prime", "Consolas", "Monospaced");
  
     private Tema() {
     }
@@ -76,27 +86,30 @@ public final class Tema {
     }
  
     // ------------------------------------------------------------------
-    // Colores base
+    // Colores base (papel + tinta)
     // ------------------------------------------------------------------
  
+    /** Papel de fondo. */
     public static Color fondo() {
-        return altoContraste ? Color.BLACK : new Color(15, 19, 30);
+        return altoContraste ? Color.BLACK : new Color(238, 229, 208);
     }
  
+    /** Papel más claro para tarjetas y áreas de lectura. */
     public static Color panel() {
-        return altoContraste ? Color.BLACK : new Color(25, 31, 46);
+        return altoContraste ? Color.BLACK : new Color(250, 246, 234);
     }
  
+    /** Tinta. */
     public static Color texto() {
-        return altoContraste ? Color.WHITE : new Color(236, 240, 250);
+        return altoContraste ? Color.WHITE : new Color(26, 26, 30);
     }
  
     public static Color textoSuave() {
-        return altoContraste ? Color.WHITE : new Color(150, 162, 188);
+        return altoContraste ? Color.WHITE : new Color(98, 90, 78);
     }
  
     public static Color borde() {
-        return altoContraste ? Color.WHITE : new Color(50, 60, 84);
+        return altoContraste ? Color.WHITE : new Color(26, 26, 30);
     }
  
     // ------------------------------------------------------------------
@@ -104,19 +117,24 @@ public final class Tema {
     // ------------------------------------------------------------------
  
     public static Color acento() {
-        return altoContraste ? new Color(255, 255, 0) : new Color(96, 165, 250);
+        return altoContraste ? new Color(255, 255, 0) : new Color(28, 70, 156);
     }
  
     public static Color positivo() {
-        return altoContraste ? new Color(0, 255, 128) : new Color(74, 208, 142);
+        return altoContraste ? new Color(0, 255, 128) : new Color(20, 126, 72);
     }
  
     public static Color negativo() {
-        return altoContraste ? new Color(255, 128, 0) : new Color(244, 100, 112);
+        return altoContraste ? new Color(255, 128, 0) : new Color(200, 38, 46);
     }
  
     public static Color nodo() {
-        return altoContraste ? Color.BLACK : new Color(40, 49, 70);
+        return altoContraste ? Color.BLACK : new Color(255, 252, 242);
+    }
+ 
+    /** Color de "marcador fluorescente" (usado en el cronómetro). */
+    public static Color resaltado() {
+        return altoContraste ? Color.BLACK : new Color(255, 212, 0);
     }
  
     // ------------------------------------------------------------------
@@ -124,7 +142,7 @@ public final class Tema {
     // ------------------------------------------------------------------
  
     public static Font titulo() {
-        return new Font(FAMILIA, Font.BOLD, altoContraste ? 24 : 22);
+        return new Font(FAMILIA, Font.BOLD, altoContraste ? 28 : 26);
     }
  
     public static Font subtitulo() {
@@ -135,9 +153,9 @@ public final class Tema {
         return new Font(FAMILIA, Font.PLAIN, altoContraste ? 16 : 14);
     }
  
-    /** Fuente para la frase principal de la publicación (grande y legible). */
+    /** Fuente para la frase principal de la publicación (estilo titular). */
     public static Font destacado() {
-        return new Font(FAMILIA, Font.PLAIN, altoContraste ? 24 : 22);
+        return new Font(FAMILIA, Font.BOLD, altoContraste ? 26 : 24);
     }
  
     /** Fuente para las etiquetas de indicadores. */
@@ -150,7 +168,7 @@ public final class Tema {
     }
  
     public static Font mono() {
-        return new Font(FAMILIA_MONO, Font.PLAIN, altoContraste ? 15 : 13);
+        return new Font(FAMILIA_MONO, Font.BOLD, altoContraste ? 15 : 13);
     }
  
     // ------------------------------------------------------------------
@@ -170,9 +188,8 @@ public final class Tema {
         return new Color(c.getRed(), c.getGreen(), c.getBlue(), alfa);
     }
  
-    /** Aplica el tema a los cuadros de diálogo (JOptionPane) y otros componentes globales. */
+    /** Aplica el tema a componentes globales (tooltips). */
     public static void instalarUI() {
-        UIManager.put("Panel.background", fondo());
         UIManager.put("ToolTip.background", panel());
         UIManager.put("ToolTip.foreground", texto());
         UIManager.put("ToolTip.font", normal());
@@ -181,13 +198,11 @@ public final class Tema {
     /**
      * Muestra un cuadro de diálogo modal con el estilo del juego (reemplaza a JOptionPane).
      */
-    public static void mostrarDialogo(java.awt.Component padre, String titulo, String mensaje) {
-        java.awt.Window dueno = padre instanceof java.awt.Window
-                ? (java.awt.Window) padre : javax.swing.SwingUtilities.getWindowAncestor(padre);
-        final javax.swing.JDialog d = new javax.swing.JDialog(dueno, titulo,
-                java.awt.Dialog.ModalityType.APPLICATION_MODAL);
+    public static void mostrarDialogo(Component padre, String titulo, String mensaje) {
+        Window dueno = padre instanceof Window ? (Window) padre : SwingUtilities.getWindowAncestor(padre);
+        final JDialog d = new JDialog(dueno, titulo, Dialog.ModalityType.APPLICATION_MODAL);
  
-        javax.swing.JTextArea area = new javax.swing.JTextArea(mensaje);
+        JTextArea area = new JTextArea(mensaje);
         area.setEditable(false);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
@@ -206,19 +221,21 @@ public final class Tema {
         estilizarScroll(sp);
  
         Boton ok = new Boton("ACEPTAR", Tema::acento);
-        ok.setPreferredSize(new Dimension(150, 42));
+        ok.setPreferredSize(new Dimension(160, 46));
         ok.addActionListener(e -> d.dispose());
  
-        JPanel abajo = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 0, 0));
+        JPanel abajo = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 0));
         abajo.setOpaque(false);
         abajo.setBorder(BorderFactory.createEmptyBorder(16, 0, 0, 0));
         abajo.add(ok);
  
-        JPanel raiz = new JPanel(new java.awt.BorderLayout());
+        JPanel raiz = new JPanel(new BorderLayout());
         raiz.setBackground(fondo());
-        raiz.setBorder(BorderFactory.createEmptyBorder(22, 26, 22, 26));
-        raiz.add(sp, java.awt.BorderLayout.CENTER);
-        raiz.add(abajo, java.awt.BorderLayout.SOUTH);
+        raiz.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(borde(), 3),
+                BorderFactory.createEmptyBorder(22, 26, 22, 26)));
+        raiz.add(sp, BorderLayout.CENTER);
+        raiz.add(abajo, BorderLayout.SOUTH);
  
         d.setContentPane(raiz);
         d.getRootPane().setDefaultButton(ok);
@@ -228,12 +245,12 @@ public final class Tema {
         d.setVisible(true);
     }
  
-    /** Aplica barras de desplazamiento delgadas y planas a un JScrollPane. */
+    /** Aplica barras de desplazamiento cuadradas y planas a un JScrollPane. */
     public static void estilizarScroll(JScrollPane sp) {
         sp.getVerticalScrollBar().setUI(new BarraFina());
         sp.getHorizontalScrollBar().setUI(new BarraFina());
-        sp.getVerticalScrollBar().setPreferredSize(new Dimension(10, 0));
-        sp.getHorizontalScrollBar().setPreferredSize(new Dimension(0, 10));
+        sp.getVerticalScrollBar().setPreferredSize(new Dimension(12, 0));
+        sp.getHorizontalScrollBar().setPreferredSize(new Dimension(0, 12));
         sp.getVerticalScrollBar().setUnitIncrement(16);
         sp.getHorizontalScrollBar().setUnitIncrement(16);
     }
@@ -242,32 +259,40 @@ public final class Tema {
     // Componentes visuales
     // ------------------------------------------------------------------
  
-    /** Panel con esquinas redondeadas, relleno y borde según el tema activo. */
+    /**
+     * Panel estilo "recorte de periódico": esquinas rectas, borde grueso de tinta
+     * y sombra dura desplazada. El contenido debe dejar un margen extra a la derecha
+     * y abajo (alrededor de 6 px) para no pisar la sombra.
+     */
     public static class Tarjeta extends JPanel {
- 
-        private final int radio;
  
         public Tarjeta(LayoutManager layout, int radio) {
             super(layout);
-            this.radio = radio;
             setOpaque(false);
         }
  
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
-            suavizar(g2);
-            g2.setColor(panel());
-            g2.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, radio, radio);
+            int w = getWidth() - SOMBRA - 1;
+            int h = getHeight() - SOMBRA - 1;
+ 
             g2.setColor(borde());
-            g2.setStroke(new java.awt.BasicStroke(altoContraste ? 2f : 1.2f));
-            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, radio, radio);
+            g2.fillRect(SOMBRA, SOMBRA, w, h);          // sombra dura
+            g2.setColor(panel());
+            g2.fillRect(0, 0, w, h);                    // hoja
+            g2.setColor(borde());
+            g2.setStroke(new BasicStroke(altoContraste ? 3f : 2.5f, BasicStroke.CAP_SQUARE, BasicStroke.JOIN_MITER));
+            g2.drawRect(1, 1, w - 2, h - 2);            // borde
             g2.dispose();
             super.paintComponent(g);
         }
     }
  
-    /** Botón redondeado con efecto al pasar el mouse y color de acento propio. */
+    /**
+     * Botón cuadrado con sombra de color: al pasar el mouse se rellena con su color
+     * y al presionarlo "se hunde" sobre su sombra.
+     */
     public static class Boton extends JButton {
  
         private final Supplier<Color> colorAcento;
@@ -303,51 +328,60 @@ public final class Tema {
             suavizar(g2);
             Color ac = colorAcento.get();
             boolean activo = isEnabled();
-            int w = getWidth() - 1;
-            int h = getHeight() - 1;
+            boolean presionado = activo && getModel().isPressed();
+            boolean resaltar = activo && encima;
  
-            g2.setColor(activo && encima ? conAlfa(ac, altoContraste ? 255 : 55) : panel());
-            g2.fillRoundRect(0, 0, w, h, 16, 16);
-            g2.setColor(activo ? ac : borde());
-            g2.setStroke(new java.awt.BasicStroke(altoContraste ? 2.5f : 1.6f));
-            g2.drawRoundRect(0, 0, w, h, 16, 16);
+            int bw = getWidth() - SOMBRA - 1;
+            int bh = getHeight() - SOMBRA - 1;
+            int off = presionado ? SOMBRA : 0;
+ 
+            if (activo && !presionado) {
+                g2.setColor(ac);
+                g2.fillRect(SOMBRA, SOMBRA, bw, bh);     // sombra de color
+            }
+            g2.setColor(resaltar ? ac : (activo ? panel() : fondo()));
+            g2.fillRect(off, off, bw, bh);
+            g2.setColor(activo ? borde() : textoSuave());
+            g2.setStroke(new BasicStroke(altoContraste ? 3f : 2.5f, BasicStroke.CAP_SQUARE, BasicStroke.JOIN_MITER));
+            g2.drawRect(off + 1, off + 1, bw - 2, bh - 2);
  
             g2.setFont(subtitulo());
             FontMetrics fm = g2.getFontMetrics();
             String t = getText();
-            boolean invertir = activo && encima && altoContraste;
-            g2.setColor(invertir ? Color.BLACK : (activo ? texto() : textoSuave()));
-            g2.drawString(t, (getWidth() - fm.stringWidth(t)) / 2,
-                    (getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+            Color colTexto = !activo ? textoSuave()
+                    : (resaltar ? (altoContraste ? Color.BLACK : Color.WHITE) : texto());
+            g2.setColor(colTexto);
+            g2.drawString(t, off + (bw - fm.stringWidth(t)) / 2,
+                    off + (bh - fm.getHeight()) / 2 + fm.getAscent());
             g2.dispose();
         }
     }
  
-    /** Diseño plano de pestañas: texto simple con subrayado de acento en la activa. */
+    /** Pestañas tipo "fichas" de periódico: bloque de tinta para la activa. */
     public static class PestanasUI extends BasicTabbedPaneUI {
  
         @Override
         protected void installDefaults() {
             super.installDefaults();
-            tabInsets = new Insets(10, 22, 10, 22);
+            tabInsets = new Insets(9, 24, 9, 24);
             selectedTabPadInsets = new Insets(0, 0, 0, 0);
             contentBorderInsets = new Insets(0, 0, 0, 0);
-            tabAreaInsets = new Insets(4, 12, 0, 12);
+            tabAreaInsets = new Insets(8, 12, 0, 12);
         }
  
         @Override
         protected void paintTabBackground(Graphics g, int tp, int i, int x, int y, int w, int h, boolean sel) {
-            // sin fondo: las pestañas son planas
+            g.setColor(sel ? texto() : panel());
+            g.fillRect(x + 3, y + 2, w - 6, h - 2);
         }
  
         @Override
         protected void paintTabBorder(Graphics g, int tp, int i, int x, int y, int w, int h, boolean sel) {
-            if (sel) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setColor(acento());
-                g2.fillRoundRect(x + 10, y + h - 3, w - 20, 3, 3, 3);
-                g2.dispose();
-            }
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setColor(borde());
+            g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_SQUARE, BasicStroke.JOIN_MITER));
+            g2.drawRect(x + 4, y + 3, w - 8, h - 3);
+            g2.dispose();
         }
  
         @Override
@@ -356,7 +390,7 @@ public final class Tema {
             Graphics2D g2 = (Graphics2D) g.create();
             suavizar(g2);
             g2.setFont(font);
-            g2.setColor(sel ? texto() : textoSuave());
+            g2.setColor(sel ? fondo() : texto());
             g2.drawString(titulo, r.x, r.y + fm.getAscent());
             g2.dispose();
         }
@@ -370,9 +404,11 @@ public final class Tema {
         @Override
         protected void paintContentBorder(Graphics g, int tp, int sel) {
             Insets in = tabPane.getInsets();
-            int y = in.top + calculateTabAreaHeight(tp, runCount, maxTabHeight) - 1;
-            g.setColor(borde());
-            g.drawLine(in.left, y, tabPane.getWidth() - in.right, y);
+            int y = in.top + calculateTabAreaHeight(tp, runCount, maxTabHeight) - 2;
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setColor(borde());
+            g2.fillRect(in.left, y, tabPane.getWidth() - in.left - in.right, 3);
+            g2.dispose();
         }
  
         @Override
@@ -386,7 +422,7 @@ public final class Tema {
         }
     }
  
-    /** Barra de desplazamiento delgada, sin flechas. */
+    /** Barra de desplazamiento cuadrada, sin flechas. */
     private static class BarraFina extends BasicScrollBarUI {
  
         private JButton vacio() {
@@ -410,7 +446,7 @@ public final class Tema {
  
         @Override
         protected void paintTrack(Graphics g, JComponent c, Rectangle r) {
-            g.setColor(panel());
+            g.setColor(fondo());
             g.fillRect(r.x, r.y, r.width, r.height);
         }
  
@@ -419,11 +455,8 @@ public final class Tema {
             if (r.isEmpty() || !scrollbar.isEnabled()) {
                 return;
             }
-            Graphics2D g2 = (Graphics2D) g.create();
-            suavizar(g2);
-            g2.setColor(altoContraste ? Color.WHITE : new Color(75, 88, 118));
-            g2.fillRoundRect(r.x + 1, r.y + 1, r.width - 2, r.height - 2, 8, 8);
-            g2.dispose();
+            g.setColor(borde());
+            g.fillRect(r.x + 2, r.y + 1, r.width - 4, r.height - 2);
         }
     }
 }
