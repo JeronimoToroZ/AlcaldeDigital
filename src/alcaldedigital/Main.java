@@ -29,15 +29,19 @@ public class Main {
             } catch (Exception ignorada) {
             }
 
-            // Configuración inicial de jugadores y lanzamiento de la ventana principal
-            List<Jugador> jugadores = configurarJugadores();
-            if (jugadores == null) {
-                return;
-            }
-            
-            Partida partida = new Partida(jugadores, 4);
-            new VentanaJuego(partida).setVisible(true);
+            // Primero se muestra la portada; al pulsar START continúa el flujo
+            new alcaldedigital.gui.PantallaInicio(Main::iniciarPartida).setVisible(true);
         });
+    }
+
+    /** Se ejecuta al pulsar START: registra jugadores y abre el tablero. */
+    private static void iniciarPartida() {
+        List<Jugador> jugadores = configurarJugadores();
+        if (jugadores == null) {
+            System.exit(0);
+        }
+        Partida partida = new Partida(jugadores, 4);
+        new VentanaJuego(partida).setVisible(true);
     }
 
     /**
