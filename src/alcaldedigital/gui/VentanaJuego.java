@@ -1,3 +1,7 @@
+/*
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
+ */
 package alcaldedigital.gui;
 
 import alcaldedigital.logica.Partida;
@@ -13,7 +17,6 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.awt.BasicStroke;
-import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -255,11 +258,10 @@ public class VentanaJuego extends JFrame {
         return p;
     }
 
-    /** Construye la pestaña con el Grafo Social, los nodos interactivos y el temporizador BFS. */
+    /** Construye la pestaña con el Grafo Social, líneas semitransparentes, nodos con 45% de transparencia y temporizador a 1280ms. */
     private JPanel construirPestanaRedSocial() {
-        JPanel panelRed = new JPanel(new BorderLayout());
+        PanelConFondo panelRed = new PanelConFondo(new BorderLayout(), "/alcaldedigital/recursos/mapa_ciudad.jpg");
         panelRed.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
-        panelRed.setOpaque(false);
         
         GrafoSocial grafo = new GrafoSocial();
         grafo.inicializarMapaPrueba();
@@ -271,40 +273,56 @@ public class VentanaJuego extends JFrame {
                 Graphics2D g2d = (Graphics2D) g;
                 g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                // Dibujar aristas (líneas)
-                g2d.setColor(new Color(120, 120, 120));
-                g2d.setStroke(new BasicStroke(3));
+                // Factores de escala basados en la resolución de referencia (1000 x 800)
+                double scaleX = (double) getWidth() / 1000.0;
+                double scaleY = (double) getHeight() / 800.0;
+
+                // 1. Dibujar aristas con transparencia
+                g2d.setColor(new Color(110, 70, 30, 120));
+                g2d.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
                 for (NodoRed nodo : grafo.nodos) {
+                    int x1 = (int) (nodo.x * scaleX);
+                    int y1 = (int) (nodo.y * scaleY);
                     for (NodoRed vecino : nodo.vecinos) {
-                        g2d.drawLine(nodo.x, nodo.y, vecino.x, vecino.y);
+                        int x2 = (int) (vecino.x * scaleX);
+                        int y2 = (int) (vecino.y * scaleY);
+                        g2d.drawLine(x1, y1, x2, y2);
                     }
                 }
 
-                // Dibujar nodos (círculos)
+                // 2. Dibujar nodos interactivos con 45% de transparencia (alfa 140)
                 for (NodoRed nodo : grafo.nodos) {
+                    int x = (int) (nodo.x * scaleX);
+                    int y = (int) (nodo.y * scaleY);
+
                     if (nodo.estaInfectado) {
-                        g2d.setColor(Color.RED);
+                        g2d.setColor(new Color(210, 50, 50, 140)); // Rojo alerta con 45% transparencia
                     } else {
-                        g2d.setColor(new Color(50, 150, 250));
+                        g2d.setColor(new Color(40, 120, 200, 140)); // Azul seguro con 45% transparencia
                     }
-                    g2d.fillOval(nodo.x - 22, nodo.y - 22, 44, 44);
                     
-                    g2d.setColor(Tema.texto());
-                    g2d.setFont(new Font("Arial", Font.BOLD, 13));
-                    g2d.drawString(nodo.nombre, nodo.x - 25, nodo.y - 30);
+                    g2d.fillOval(x - 16, y - 16, 32, 32);
+                    g2d.setColor(new Color(255, 255, 255, 200)); // Borde blanco sutil
+                    g2d.setStroke(new BasicStroke(2));
+                    g2d.drawOval(x - 16, y - 16, 32, 32);
                 }
             }
         };
         lienzo.setOpaque(false);
 
-        // Detector de clics para limpiar nodos infectados
+        // Detector de clics para purificar nodos
         lienzo.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 int mouseX = e.getX();
                 int mouseY = e.getY();
+                double scaleX = (double) lienzo.getWidth() / 1000.0;
+                double scaleY = (double) lienzo.getHeight() / 800.0;
+
                 for (NodoRed nodo : grafo.nodos) {
-                    double distancia = Math.sqrt(Math.pow(mouseX - nodo.x, 2) + Math.pow(mouseY - nodo.y, 2));
+                    int nodoXReal = (int) (nodo.x * scaleX);
+                    int nodoYReal = (int) (nodo.y * scaleY);
+                    double distancia = Math.sqrt(Math.pow(mouseX - nodoXReal, 2) + Math.pow(mouseY - nodoYReal, 2));
                     if (distancia <= 22) {
                         nodo.estaInfectado = false;
                         lienzo.repaint();
@@ -314,8 +332,8 @@ public class VentanaJuego extends JFrame {
             }
         });
 
-        // Temporizador para automatizar la propagación por BFS cada 3 segundos
-        Timer timerRed = new Timer(3000, e -> {
+        // Temporizador configurado exactamente a 1280 milisegundos
+        Timer timerRed = new Timer(1280, e -> {
             grafo.propagarRumorBFS();
             lienzo.repaint();
         });
