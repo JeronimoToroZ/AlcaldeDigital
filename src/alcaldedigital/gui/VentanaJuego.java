@@ -19,7 +19,6 @@ import java.awt.BasicStroke;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
@@ -30,19 +29,14 @@ import java.util.Map;
 import java.util.Random;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
-import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.Timer;
 import javax.swing.SwingUtilities;
-import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.DefaultTableModel;
 
 /**
  * Ventana principal del juego con minijuego de burbujas flotantes (20 burbujas),
@@ -74,6 +68,7 @@ public class VentanaJuego extends JFrame {
 
     private final Map<Jugador, Long> tiemposTotalesJugadores = new HashMap<>();
     private boolean juegoIniciado = false;
+    private boolean contrasteAplicado = Tema.isAltoContraste();
     
     private final List<Accion> ordenTurnosPartida = new ArrayList<>();
 
@@ -135,11 +130,17 @@ public class VentanaJuego extends JFrame {
         pestanas.addTab("Árbol AVL del feed", scrollArbol);
         pestanas.addTab("Árbol de decisión", construirPestanaDecision());
         pestanas.addTab("Red Social (Grafo)", construirPestanaRedSocial());
-        pestanas.addTab("Ayuda", construirPestanaAyuda());
-        
         add(pestanas, BorderLayout.CENTER);
 
         aplicarTema();
+
+        // El modo alto contraste ahora se cambia desde el botón de Ajustes:
+        // cuando cambie, se vuelve a pintar esta ventana con el tema nuevo.
+        Configuracion.agregarOyente(() -> {
+            if (contrasteAplicado != Tema.isAltoContraste()) {
+                aplicarTema();
+            }
+        });
     }
 
     private void inicializarGrafoCiudadZonas() {
@@ -238,29 +239,8 @@ public class VentanaJuego extends JFrame {
     }
 
     private void mostrarInstruccionesIniciales() {
-        JPanel panelInstrucciones = new JPanel(new BorderLayout(10, 10));
-        panelInstrucciones.setPreferredSize(new Dimension(480, 260));
-
-        JTextArea txtInstrucciones = new JTextArea();
-        txtInstrucciones.setEditable(false);
-        txtInstrucciones.setLineWrap(true);
-        txtInstrucciones.setWrapStyleWord(true);
-        txtInstrucciones.setFont(Tema.normal());
-        txtInstrucciones.setOpaque(false);
-        txtInstrucciones.setText(
-            "¡Bienvenido a Alcalde Digital!\n\n" +
-            "Analiza el post en pantalla durante 5 segundos y dispara rápidamente a 8 burbujas correctas entre 20 burbujas flotantes. ¡Los colores cambian cada 1.8 segundos!\n\n" +
-            "🟣 Compartir\n" +
-            "🟢 Verificar\n" +
-            "🔵 Ignorar\n" +
-            "🔴 Reportar\n\n" +
-            "¡Menor tiempo de reacción otorga mayor puntuación extra en cada turno!"
-        );
-
-        panelInstrucciones.add(txtInstrucciones, BorderLayout.CENTER);
-
         Tema.instalarUI();
-        JOptionPane.showMessageDialog(this, panelInstrucciones, "Instrucciones de la Partida", JOptionPane.INFORMATION_MESSAGE);
+        DialogoInstrucciones.instruccionesIniciales(this);
 
         cargarTurno();
         Configuracion.instalarBrillo(this);
@@ -274,19 +254,24 @@ public class VentanaJuego extends JFrame {
         izquierda.add(lblTitulo);
         izquierda.add(lblTurno);
 
-        JCheckBox chkContraste = new JCheckBox("Modo alto contraste");
-        chkContraste.setFocusPainted(false);
-        chkContraste.setSelected(Tema.isAltoContraste());
-        chkContraste.addActionListener((ActionEvent e) -> {
-            Tema.setAltoContraste(chkContraste.isSelected());
-            aplicarTema();
-            repaint();
-        });
+        // Botón Ayuda: abre las instrucciones del minijuego (antes era una pestaña)
+        BotonImagen btnAyuda = new BotonImagen("/alcaldedigital/recursos/ayuda.png", "Ayuda", true);
+        btnAyuda.setToolTipText("Ayuda");
+        btnAyuda.setPreferredSize(new Dimension(46, btnAyuda.altoParaAncho(46)));
+        btnAyuda.addActionListener(e -> DialogoInstrucciones.ayuda(this));
 
-        JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 22, 0));
+        // Botón Ajustes: modo de juego (normal / alto contraste), brillo y música
+        BotonImagen btnAjustes = new BotonImagen("/alcaldedigital/recursos/ajuste.png", "Ajustes", true);
+        btnAjustes.setToolTipText("Ajustes");
+        btnAjustes.setPreferredSize(new Dimension(46, btnAjustes.altoParaAncho(46)));
+        btnAjustes.addActionListener(e -> new DialogoAjustes(this).setVisible(true));
+
+        JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         derecha.setOpaque(false);
-        derecha.add(chkContraste);
         derecha.add(lblTiempo);
+        derecha.add(javax.swing.Box.createHorizontalStrut(6));
+        derecha.add(btnAyuda);
+        derecha.add(btnAjustes);
 
         barra.add(izquierda, BorderLayout.WEST);
         barra.add(derecha, BorderLayout.EAST);
@@ -739,6 +724,7 @@ public class VentanaJuego extends JFrame {
 
     private void resolverTurnoBurbujas(Accion accionElegida, boolean exitoDisparos, long milisegundosTardados) {
         Jugador jugadorActual = partida.jugadorActual();
+        int situacionActual = partida.getTurno();
         
         long tiempoActual = tiemposTotalesJugadores.getOrDefault(jugadorActual, 0L);
         tiemposTotalesJugadores.put(jugadorActual, tiempoActual + milisegundosTardados);
@@ -753,23 +739,12 @@ public class VentanaJuego extends JFrame {
             puntosExtraVelocidad = Math.max(20, (int)(8000 - milisegundosTardados) / 100);
         }
 
-        StringBuilder msg = new StringBuilder();
-        if (exitoDisparos) {
-            msg.append("🎯 ¡EXCELENTE PUNTERÍA! Explotaste las 8 burbujas correctas.\n");
-            msg.append("⏱️ Tiempo de reacción: ").append(milisegundosTardados / 1000.0).append(" segundos.\n");
-            msg.append("⚡ ¡Bono de velocidad: +").append(puntosExtraVelocidad).append(" pts extra!\n\n");
-        } else {
-            msg.append("❌ ¡ERROR DE DISPARO! Le diste a una burbuja equivocada o fallaste.\n\n");
-        }
-        
         int puntosTotalesTurno = r.puntos + puntosExtraVelocidad;
-        
-        msg.append(r.efecto.getMensaje()).append("\n\n");
-        msg.append("Puntos de turno: ").append(puntosTotalesTurno);
-        msg.append("     Reputación: ").append(r.reputacion >= 0 ? "+" : "").append(r.reputacion).append('\n');
 
         Tema.instalarUI();
-        JOptionPane.showMessageDialog(this, msg.toString(), "Resultado de la Situación", JOptionPane.INFORMATION_MESSAGE);
+        new DialogoResultado(this, jugadorActual.getNombre(), situacionActual, accionElegida, exitoDisparos,
+                milisegundosTardados / 1000.0, puntosExtraVelocidad, puntosTotalesTurno,
+                r.reputacion, r.efecto.getMensaje()).mostrar();
 
         cargarTurno();
     }
@@ -812,86 +787,21 @@ public class VentanaJuego extends JFrame {
             }
         });
 
-        Jugador ganador = jugadoresOrdenados.get(0);
-
-        String[] columnas = {"Nombre del Jugador", "Tiempo Total", "Puntos Totales"};
-        Object[][] datos = new Object[partida.getJugadores().size()][3];
-
-        for (int i = 0; i < partida.getJugadores().size(); i++) {
-            Jugador j = partida.getJugadores().get(i);
-            long tiempoMs = tiemposTotalesJugadores.getOrDefault(j, 0L);
-            datos[i][0] = j.getNombre() + " (" + j.getRol().getEtiqueta() + ")";
-            datos[i][1] = String.format("%.2f segundos", tiempoMs / 1000.0);
-            datos[i][2] = j.getPuntos() + " pts";
-        }
-
-        DefaultTableModel modeloTabla = new DefaultTableModel(datos, columnas) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-
-        JTable tablaResultados = new JTable(modeloTabla);
-        tablaResultados.setRowHeight(30);
-        tablaResultados.setFont(Tema.normal());
-        tablaResultados.getTableHeader().setFont(Tema.indicadorNegrita());
-
-        final Jugador jugadorGanadorFinal = ganador;
-        tablaResultados.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                Jugador jActual = partida.getJugadores().get(row);
-                if (jActual.equals(jugadorGanadorFinal)) {
-                    c.setBackground(new Color(212, 239, 223)); 
-                    c.setForeground(new Color(20, 90, 50));
-                } else {
-                    c.setBackground(Color.WHITE);
-                    c.setForeground(Color.BLACK);
-                }
-                return c;
-            }
-        });
-
-        JScrollPane scrollTabla = new JScrollPane(tablaResultados);
-        scrollTabla.setPreferredSize(new Dimension(520, 160));
-        scrollTabla.setBorder(BorderFactory.createLineBorder(new Color(180, 190, 210), 1));
-
-        JPanel panelFinal = new JPanel(new BorderLayout(15, 15));
-        panelFinal.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        panelFinal.setBackground(new Color(248, 250, 252));
-
-        JLabel lblAnuncio = new JLabel("🏆 ¡CAMPAÑA FINALIZADA! Ganador: " + ganador.getNombre(), JLabel.CENTER);
-        lblAnuncio.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 16));
-        lblAnuncio.setForeground(new Color(30, 64, 175));
-        
-        JButton btnRegresar = new JButton("🏠 Regresar a Pantalla Principal");
-        btnRegresar.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 14));
-        btnRegresar.setBackground(new Color(37, 99, 235));
-        btnRegresar.setForeground(Color.WHITE);
-        btnRegresar.setFocusPainted(false);
-        btnRegresar.setPreferredSize(new Dimension(280, 40));
-
-        btnRegresar.addActionListener(e -> {
-            dispose();
-        });
-
-        JPanel panelBotonSur = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        panelBotonSur.setOpaque(false);
-        panelBotonSur.add(btnRegresar);
-
-        panelFinal.add(lblAnuncio, BorderLayout.NORTH);
-        panelFinal.add(scrollTabla, BorderLayout.CENTER);
-        panelFinal.add(panelBotonSur, BorderLayout.SOUTH);
-
-        Tema.instalarUI();
-        JOptionPane.showMessageDialog(this, panelFinal, "Resultados Finales de la Campaña", JOptionPane.PLAIN_MESSAGE);
-
         actualizarMarcador();
         actualizarBitacora();
         panelIndicadores.repaint();
         panelArbol.repaint();
+
+        Tema.instalarUI();
+        DialogoResultadosFinales.Opcion opcion =
+                new DialogoResultadosFinales(this, jugadoresOrdenados, tiemposTotalesJugadores).elegir();
+
+        if (opcion == DialogoResultadosFinales.Opcion.VOLVER_AL_INICIO) {
+            dispose();
+            alcaldedigital.Main.mostrarPortada();
+        } else if (opcion == DialogoResultadosFinales.Opcion.SALIR) {
+            System.exit(0);
+        }
     }
 
     private JPanel construirPestanaCiudad() {
@@ -1016,19 +926,6 @@ public class VentanaJuego extends JFrame {
         return panelRed;
     }
 
-    private JPanel construirPestanaAyuda() {
-        JTextArea area = new JTextArea();
-        area.setEditable(false);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setFont(Tema.normal());
-        area.setText("INSTRUCCIONES DEL MINIJUEGO DE BURBUJAS\nLee el post dentro del recuadro central y dispara con el ratón a 8 burbujas correctas entre 20 burbujas flotantes que se desplazan por la pantalla (los colores cambian cada 1.8 segundos).\n\n🟣 Compartir\n🟢 Verificar\n🔵 Ignorar\n🔴 Reportar\n\nGana más puntos quien lo haga más rápido en las 4 situaciones.");
-        JScrollPane sp = new JScrollPane(area);
-        JPanel p = new JPanel(new BorderLayout());
-        p.add(sp, BorderLayout.CENTER);
-        return p;
-    }
-
     private static javax.swing.border.Border bordeTitulado(String titulo) {
         javax.swing.border.TitledBorder b = BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(Tema.borde(), 2), "  " + titulo.toUpperCase() + "  ");
@@ -1038,6 +935,7 @@ public class VentanaJuego extends JFrame {
     }
 
     private void aplicarTema() {
+        contrasteAplicado = Tema.isAltoContraste();
         Tema.instalarUI();
         pintar(getContentPane());
         lblTitulo.setFont(Tema.titulo());
@@ -1073,4 +971,4 @@ public class VentanaJuego extends JFrame {
             }
         }
     }
-}
+}

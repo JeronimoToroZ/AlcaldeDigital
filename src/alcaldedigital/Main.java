@@ -28,9 +28,16 @@ public class Main {
 
             Configuracion.aplicarGuardada();   // ajustes guardados (contraste, brillo...)
 
-            // Primero se muestra la portada; al pulsar START continúa el flujo
-            new alcaldedigital.gui.PantallaInicio(Main::iniciarPartida).setVisible(true);
+            mostrarPortada();
         });
+    }
+
+    /**
+     * Muestra la portada; al pulsar START continúa el flujo.
+     * También se usa al terminar una campaña con "Volver al inicio".
+     */
+    public static void mostrarPortada() {
+        new alcaldedigital.gui.PantallaInicio(Main::iniciarPartida).setVisible(true);
     }
 
     /** Se ejecuta al pulsar START: abre el registro de jugadores y luego el tablero. */

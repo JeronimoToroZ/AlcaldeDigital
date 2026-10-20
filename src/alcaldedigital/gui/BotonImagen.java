@@ -22,7 +22,16 @@ public class BotonImagen extends JButton {
     private BufferedImage resaltado;
 
     public BotonImagen(String ruta, String texto) {
-        original = cargar(ruta);
+        this(ruta, texto, false);
+    }
+
+    /**
+     * @param recortar true para quitar los márgenes transparentes de la imagen
+     *                 (útil si el PNG trae mucho espacio vacío alrededor, como ayuda.png).
+     */
+    public BotonImagen(String ruta, String texto, boolean recortar) {
+        BufferedImage img = cargar(ruta);
+        original = (recortar && img != null) ? recortarTransparencia(img) : img;
         setBorderPainted(false);
         setContentAreaFilled(false);
         setFocusPainted(false);
@@ -42,6 +51,25 @@ public class BotonImagen extends JButton {
             System.err.println("No se pudo cargar la imagen: " + ruta);
             return null;
         }
+    }
+
+    /** Devuelve la imagen recortada al rectángulo que contiene píxeles visibles. */
+    public static BufferedImage recortarTransparencia(BufferedImage img) {
+        int minX = img.getWidth(), minY = img.getHeight(), maxX = -1, maxY = -1;
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = 0; x < img.getWidth(); x++) {
+                if ((img.getRGB(x, y) >>> 24) > 10) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        if (maxX < minX || maxY < minY) {
+            return img;   // imagen totalmente transparente: se deja igual
+        }
+        return img.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
     /** Alto que tendría el botón con ese ancho, conservando la proporción. */
