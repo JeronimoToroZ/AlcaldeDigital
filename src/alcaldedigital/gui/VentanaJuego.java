@@ -15,7 +15,6 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
-import java.awt.GridLayout;
 import java.awt.BasicStroke;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -23,25 +22,31 @@ import java.awt.RenderingHints;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.util.function.Supplier;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTable;
 import javax.swing.JTextArea;
-import javax.swing.SwingConstants;
 import javax.swing.Timer;
+import javax.swing.SwingUtilities;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
 
 /**
- * Ventana principal del juego (Tablero central). Gestiona la interfaz gráfica,
- * las pestañas de visualización del Árbol AVL en vivo, el Árbol de Decisiones,
- * la sección de ayuda, el cronómetro de turnos, el mapa de red y la aplicación de temas visuales.
+ * Ventana principal del juego con minijuego de burbujas, 4 situaciones exactas por ronda en orden aleatorio,
+ * tabla resumen final, instrucciones y Grafo Social.
  *
  * @author Naty
  */
@@ -49,16 +54,15 @@ public class VentanaJuego extends JFrame {
 
     private final Partida partida;
 
+    private final GrafoSocial grafoSocial = new GrafoSocial();
+    private JPanel panelLienzoGrafo;
+    private Timer timerPropagacionGrafo;
+
     private final JLabel lblTitulo = new JLabel("ALCALDE DIGITAL");
     private final JLabel lblTurno = new JLabel();
-    private final JLabel lblJugador = new JLabel();
     private final JLabel lblTiempo = new JLabel();
-    private final JLabel lblAutor = new JLabel();
-    private final JLabel lblCredibilidad = new JLabel();
-    private final JTextArea areaPublicacion = new JTextArea();
     private final JTextArea areaBitacora = new JTextArea();
     private final JTextArea areaMarcador = new JTextArea();
-    private final JPanel panelBotones = new JPanel();
     private JPanel barraSuperior;
     private JScrollPane scrollMarcador;
     private JScrollPane scrollBitacora;
@@ -66,17 +70,51 @@ public class VentanaJuego extends JFrame {
     private final PanelArbolAVL panelArbol;
     private final JTabbedPane pestanas = new JTabbedPane();
 
-    private Timer cronometro;
-    private int segundosRestantes;
+    private final Map<Jugador, Long> tiemposTotalesJugadores = new HashMap<>();
+    private boolean juegoIniciado = false;
+    
+    // Lista para asegurar el orden aleatorio exacto de las 4 acciones por partida
+    private final List<Accion> ordenTurnosPartida = new ArrayList<>();
 
-    /**
-     * Inicializa la ventana del juego configurando los componentes principales,
-     * la estructura de pestañas y cargando el primer turno de la partida.
-     */
+    // Bancos de textos personalizados para cada categoría
+    private final List<String> textosIgnorar = new ArrayList<>();
+    private final List<String> textosReportar = new ArrayList<>();
+    private final List<String> textosVerificar = new ArrayList<>();
+    private final List<String> textosCompartir = new ArrayList<>();
+    private final Random randomGlobal = new Random();
+
     public VentanaJuego(Partida partida) {
         this.partida = partida;
         this.panelIndicadores = new PanelIndicadores(partida.getCiudad());
         this.panelArbol = new PanelArbolAVL(partida.getFeed());
+
+        // Llenar los bancos con tus frases exactas
+        inicializarBancosTextos();
+
+        // Inicializar exactamente una de cada categoría y barajarlas para que salgan en orden aleatorio diferente
+        ordenTurnosPartida.add(Accion.IGNORAR);
+        ordenTurnosPartida.add(Accion.REPORTAR);
+        ordenTurnosPartida.add(Accion.VERIFICAR);
+        ordenTurnosPartida.add(Accion.COMPARTIR);
+        Collections.shuffle(ordenTurnosPartida);
+
+        grafoSocial.inicializarMapaPrueba();
+        
+        if (!grafoSocial.nodos.isEmpty()) {
+            for (NodoRed n : grafoSocial.nodos) {
+                n.estaInfectado = false;
+            }
+            grafoSocial.nodos.get(0).estaInfectado = true;
+        }
+
+        timerPropagacionGrafo = new Timer(3500, e -> {
+            propagarInfeccionGrafoGradual();
+        });
+        timerPropagacionGrafo.start();
+
+        for (Jugador j : partida.getJugadores()) {
+            tiemposTotalesJugadores.put(j, 0L);
+        }
 
         setTitle("Alcalde Digital - Ciudad Nova");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -98,20 +136,106 @@ public class VentanaJuego extends JFrame {
         pestanas.addTab("Ciudad y jugadores", construirPestanaCiudad());
         pestanas.addTab("Árbol AVL del feed", scrollArbol);
         pestanas.addTab("Árbol de decisión", construirPestanaDecision());
-        
-        // --- NUEVA PESTAÑA: RED SOCIAL / GRAFO INTERACTIVO ---
         pestanas.addTab("Red Social (Grafo)", construirPestanaRedSocial());
-        
         pestanas.addTab("Ayuda", construirPestanaAyuda());
+        
         add(pestanas, BorderLayout.CENTER);
 
         aplicarTema();
-        cargarTurno();
     }
 
-    // ------------------------------------------------------------------
-    // Construccion de la interfaz
-    // ------------------------------------------------------------------
+    private void inicializarBancosTextos() {
+        // Ignorar (Azul)
+        textosIgnorar.add("Creo que debería perder el candidato Perez.");
+        textosIgnorar.add("Para mí, la mejor propuesta es la de la candidata Ramirez.");
+        textosIgnorar.add("Dicen que van a subir los impuestos apenas pasen las elecciones.");
+        textosIgnorar.add("Supuestamente van a eliminar el subsidio de agua después de las elecciones.");
+        textosIgnorar.add("Creo que deberían hacer menos debates entre candidatos.");
+
+        // Reportar (Rojo)
+        textosReportar.add("El alcalde actual está robando dinero de la ciudad.");
+        textosReportar.add("El funcionario público está robando los fondos destinados a la salud.");
+        textosReportar.add("Se descubrió un esquema de sobornos ilegales en la alcaldía.");
+        textosReportar.add("Demandan a contratista por desviar recursos públicos de las obras.");
+        textosReportar.add("Confirman desvío ilegal de fondos del presupuesto municipal.");
+
+        // Verificar (Verde)
+        textosVerificar.add("Comunicado Oficial: Las urnas de votación cerrarán a mediodía por orden de la alcaldía.");
+        textosVerificar.add("Información Oficial: Se confirma por la alcaldía que el voto electrónico será obligatorio únicamente para los mayores de 60 años.");
+        textosVerificar.add("Fuente Oficial: Las mesas de votación abrirán a las 8:00 a.m. en todos los puestos autorizados.");
+        textosVerificar.add("Información Oficial: Inicia la distribución oficial de tarjetones electorales en las zonas norte y sur.");
+        textosVerificar.add("Fuente Oficial: El boletín de la Registraduría confirma el cierre de mesas a las 4:00 p.m.");
+
+        // Compartir (Morado)
+        textosCompartir.add("Atención comunidad: El puesto de salud central estará abierto todo el día brindando atención prioritaria. ¡Pasen la voz!");
+        textosCompartir.add("Noticia de Última hora: ya pueden revisar la publicación oficial de la ciudad con los resultados consolidados y validados.");
+        textosCompartir.add("¡Buenos días vecinos! Ya habilitaron la nueva ruta de transporte público gratuito hacia los centros de votación. ¡Compártanlo con su familia!");
+        textosCompartir.add("¡Entérate! La alcaldía habilitó una plataforma digital gratuita para consultar tu puesto de votación en segundos. ¡Difunde esta información!");
+        textosCompartir.add("Reporte de última hora: Las vías principales del centro estarán despejadas y con paso libre para facilitar la movilidad electoral. ¡Compártanlo en sus grupos!");
+    }
+
+    private void propagarInfeccionGrafoGradual() {
+        if (grafoSocial == null || grafoSocial.nodos.isEmpty()) return;
+
+        List<NodoRed> vecinosSanosDisponibles = new ArrayList<>();
+
+        for (NodoRed nodo : grafoSocial.nodos) {
+            if (nodo.estaInfectado) {
+                for (NodoRed vecino : nodo.vecinos) {
+                    if (!vecino.estaInfectado && !vecinosSanosDisponibles.contains(vecino)) {
+                        vecinosSanosDisponibles.add(vecino);
+                    }
+                }
+            }
+        }
+
+        if (!vecinosSanosDisponibles.isEmpty()) {
+            Random rand = new Random();
+            NodoRed elegidoParaContagio = vecinosSanosDisponibles.get(rand.nextInt(vecinosSanosDisponibles.size()));
+            elegidoParaContagio.estaInfectado = true;
+        }
+
+        if (panelLienzoGrafo != null) {
+            panelLienzoGrafo.repaint();
+        }
+    }
+
+    @Override
+    public void setVisible(boolean b) {
+        super.setVisible(b);
+        if (b && !juegoIniciado) {
+            juegoIniciado = true;
+            mostrarInstruccionesIniciales();
+        }
+    }
+
+    private void mostrarInstruccionesIniciales() {
+        JPanel panelInstrucciones = new JPanel(new BorderLayout(10, 10));
+        panelInstrucciones.setPreferredSize(new Dimension(480, 260));
+
+        JTextArea txtInstrucciones = new JTextArea();
+        txtInstrucciones.setEditable(false);
+        txtInstrucciones.setLineWrap(true);
+        txtInstrucciones.setWrapStyleWord(true);
+        txtInstrucciones.setFont(Tema.normal());
+        txtInstrucciones.setOpaque(false);
+        txtInstrucciones.setText(
+            "¡Bienvenido a Alcalde Digital!\n\n" +
+            "Analiza el post en pantalla durante 5 segundos y dispara rápidamente a 8 burbujas del color correcto que flotarán a su alrededor. ¡Los colores cambian cada 2 segundos!\n\n" +
+            "🟣 Compartir\n" +
+            "🟢 Verificar\n" +
+            "🔵 Ignorar\n" +
+            "🔴 Reportar\n\n" +
+            "Completa las 4 situaciones en el menor tiempo posible para ganar más puntos."
+        );
+
+        panelInstrucciones.add(txtInstrucciones, BorderLayout.CENTER);
+
+        Tema.instalarUI();
+        JOptionPane.showMessageDialog(this, panelInstrucciones, "Instrucciones de la Partida", JOptionPane.INFORMATION_MESSAGE);
+
+        cargarTurno();
+    }
 
     private JPanel construirBarraSuperior() {
         JPanel barra = new JPanel(new BorderLayout());
@@ -139,84 +263,546 @@ public class VentanaJuego extends JFrame {
         return barra;
     }
 
-    private static Supplier<Color> colorAccion(Accion a) {
-        switch (a.name()) {
-            case "COMPARTIR":
-                return Tema::acento;
-            case "VERIFICAR":
-                return Tema::positivo;
-            case "REPORTAR":
-                return Tema::negativo;
-            default:
-                return Tema::textoSuave;
-        }
-    }
-
     private JPanel construirPestanaPartida() {
-        JPanel raiz = new JPanel(new BorderLayout(14, 14));
-        raiz.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        JPanel raiz = new JPanel(new BorderLayout(10, 10));
+        raiz.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
 
-        // --- tarjeta de la publicacion ---
-        Tema.Tarjeta tarjeta = new Tema.Tarjeta(new BorderLayout(8, 8), 20);
-        tarjeta.setBorder(BorderFactory.createEmptyBorder(22, 26, 30, 32));
+        PanelMinijuegoBurbujas panelJuego = new PanelMinijuegoBurbujas(this);
 
-        lblJugador.setFont(Tema.subtitulo());
-        lblAutor.setFont(Tema.normal());
-        lblCredibilidad.setFont(Tema.normal());
-
-        areaPublicacion.setEditable(false);
-        areaPublicacion.setLineWrap(true);
-        areaPublicacion.setWrapStyleWord(true);
-        areaPublicacion.setOpaque(false);
-        areaPublicacion.setFont(Tema.destacado());
-        areaPublicacion.setBorder(BorderFactory.createEmptyBorder(18, 0, 18, 0));
-
-        JPanel cabecera = new JPanel();
-        cabecera.setLayout(new BoxLayout(cabecera, BoxLayout.Y_AXIS));
-        cabecera.setOpaque(false);
-        lblJugador.setAlignmentX(Component.LEFT_ALIGNMENT);
-        lblAutor.setAlignmentX(Component.LEFT_ALIGNMENT);
-        cabecera.add(lblJugador);
-        cabecera.add(Box.createVerticalStrut(6));
-        cabecera.add(lblAutor);
-
-        tarjeta.add(cabecera, BorderLayout.NORTH);
-        tarjeta.add(areaPublicacion, BorderLayout.CENTER);
-        tarjeta.add(lblCredibilidad, BorderLayout.SOUTH);
-
-        // --- botones de accion ---
-        panelBotones.setLayout(new GridLayout(1, 4, 12, 12));
-        panelBotones.setOpaque(false);
-        panelBotones.setBorder(BorderFactory.createEmptyBorder(14, 0, 0, 0));
-        for (Accion a : Accion.values()) {
-            Tema.Boton b = new Tema.Boton(a.getEtiqueta().toUpperCase(), colorAccion(a));
-            b.setPreferredSize(new Dimension(150, 58));
-            b.addActionListener(e -> resolverTurno(a, false));
-            panelBotones.add(b);
-        }
-
-        JPanel centro = new JPanel(new BorderLayout());
-        centro.setOpaque(false);
-        centro.add(tarjeta, BorderLayout.CENTER);
-        centro.add(panelBotones, BorderLayout.SOUTH);
-
-        // --- bitacora ---
         areaBitacora.setEditable(false);
         areaBitacora.setLineWrap(true);
         areaBitacora.setWrapStyleWord(true);
         areaBitacora.setFont(Tema.mono());
-        areaBitacora.setMargin(new java.awt.Insets(4, 8, 4, 8));
         scrollBitacora = new JScrollPane(areaBitacora);
-        scrollBitacora.setPreferredSize(new Dimension(100, 150));
-        scrollBitacora.setBorder(bordeTitulado("Consecuencias y eventos"));
+        scrollBitacora.setPreferredSize(new Dimension(400, 140));
+        scrollBitacora.setBorder(bordeTitulado("Bitácora de Disparos"));
         Tema.estilizarScroll(scrollBitacora);
+        scrollBitacora.setVisible(false);
 
-        raiz.add(centro, BorderLayout.CENTER);
-        raiz.add(scrollBitacora, BorderLayout.SOUTH);
+        JPanel panelSurOculto = new JPanel(new BorderLayout());
+        panelSurOculto.setOpaque(false);
+
+        JButton btnToggleBitacora = new JButton("📜 Ver Bitácora de Eventos");
+        btnToggleBitacora.setFocusPainted(false);
+        btnToggleBitacora.setFont(Tema.indicadorNegrita());
+        btnToggleBitacora.addActionListener(e -> {
+            boolean visible = scrollBitacora.isVisible();
+            scrollBitacora.setVisible(!visible);
+            btnToggleBitacora.setText(visible ? "📜 Ver Bitácora de Eventos" : "📜 Ocultar Bitácora");
+            raiz.revalidate();
+            raiz.repaint();
+        });
+
+        JPanel panelBotonEsquina = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        panelBotonEsquina.setOpaque(false);
+        panelBotonEsquina.add(btnToggleBitacora);
+
+        panelSurOculto.add(panelBotonEsquina, BorderLayout.NORTH);
+        panelSurOculto.add(scrollBitacora, BorderLayout.SOUTH);
+
+        raiz.add(panelJuego, BorderLayout.CENTER);
+        raiz.add(panelSurOculto, BorderLayout.SOUTH);
         return raiz;
     }
 
-    /** Pestaña con el estado de Ciudad Nova (indicadores) y el marcador de jugadores. */
+    class PanelMinijuegoBurbujas extends JPanel {
+        private Timer gameTimer;
+        private Timer timerCambioIconos;
+        private int faseJuego = 0; 
+        private int contadorLectura = 5; 
+        private Timer timerLectura;
+        
+        private List<Burbuja> burbujasActivas = new ArrayList<>();
+        private int burbujasExplotadasCorrectas = 0;
+        private final int OBJETIVO_BURBUJAS = 8;
+        private Accion accionCorrectaRonda;
+        private VentanaJuego ventanaPadre;
+        private boolean turnoResuelto = false;
+        private long tiempoInicioAccion;
+
+        public PanelMinijuegoBurbujas(VentanaJuego padre) {
+            this.ventanaPadre = padre;
+            setOpaque(true);
+            setBackground(new Color(245, 240, 230));
+            setFocusable(true);
+
+            addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    if (faseJuego != 1 || turnoResuelto) return;
+
+                    int mouseX = e.getX();
+                    int mouseY = e.getY();
+
+                    for (int i = burbujasActivas.size() - 1; i >= 0; i--) {
+                        Burbuja b = burbujasActivas.get(i);
+                        double distancia = Math.sqrt(Math.pow(mouseX - b.x, 2) + Math.pow(mouseY - b.y, 2));
+                        if (distancia <= 45) {
+                            if (b.accion == accionCorrectaRonda) {
+                                burbujasExplotadasCorrectas++;
+                                burbujasActivas.remove(i);
+
+                                if (burbujasExplotadasCorrectas >= OBJETIVO_BURBUJAS) {
+                                    turnoResuelto = true;
+                                    detenerTimers();
+                                    long milisegundosTardados = System.currentTimeMillis() - tiempoInicioAccion;
+                                    ventanaPadre.resolverTurnoBurbujas(accionCorrectaRonda, true, milisegundosTardados);
+                                }
+                            } else {
+                                turnoResuelto = true;
+                                detengorTimersYPenalizar(b.accion);
+                            }
+                            repaint();
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        public void iniciarRonda() {
+            faseJuego = 0;
+            contadorLectura = 5; 
+            burbujasActivas.clear();
+            burbujasExplotadasCorrectas = 0;
+            turnoResuelto = false;
+
+            Publicacion p = partida.publicacionActual();
+            
+            // Forzar que la acción correcta del turno corresponda estrictamente al orden aleatorio barajado de la partida
+            int turnoActualIndice = partida.getTurno() - 1;
+            if (turnoActualIndice >= 0 && turnoActualIndice < ordenTurnosPartida.size()) {
+                accionCorrectaRonda = ordenTurnosPartida.get(turnoActualIndice);
+                
+                // Seleccionar aleatoriamente una de las 5 frases correspondientes a esta acción
+                adaptarPublicacionConFraseExacta(p, accionCorrectaRonda);
+            } else {
+                accionCorrectaRonda = determinarAccionIdeal(p);
+            }
+
+            if (timerLectura != null) timerLectura.stop();
+            detenerTimers();
+
+            timerLectura = new Timer(1000, e -> {
+                contadorLectura--;
+                if (contadorLectura <= 0) {
+                    timerLectura.stop();
+                    faseJuego = 1; 
+                    tiempoInicioAccion = System.currentTimeMillis();
+                    iniciarMotorBurbujas();
+                }
+                repaint();
+            });
+            timerLectura.start();
+            
+            SwingUtilities.invokeLater(this::requestFocusInWindow);
+        }
+
+        // Asigna una de las 5 frases exactas configuradas por el usuario según la acción del turno
+        private void adaptarPublicacionConFraseExacta(Publicacion p, Accion accionEsperada) {
+            try {
+                java.lang.reflect.Field campoTexto = Publicacion.class.getDeclaredField("texto");
+                campoTexto.setAccessible(true);
+                java.lang.reflect.Field campoCred = Publicacion.class.getDeclaredField("credibilidad");
+                campoCred.setAccessible(true);
+
+                String fraseSeleccionada = "";
+                int credibilidadAsignada = 50;
+
+                switch (accionEsperada) {
+                    case IGNORAR:
+                        fraseSeleccionada = textosIgnorar.get(randomGlobal.nextInt(textosIgnorar.size()));
+                        credibilidadAsignada = 40;
+                        break;
+                    case REPORTAR:
+                        fraseSeleccionada = textosReportar.get(randomGlobal.nextInt(textosReportar.size()));
+                        credibilidadAsignada = 15;
+                        break;
+                    case VERIFICAR:
+                        fraseSeleccionada = textosVerificar.get(randomGlobal.nextInt(textosVerificar.size()));
+                        credibilidadAsignada = 55;
+                        break;
+                    case COMPARTIR:
+                        fraseSeleccionada = textosCompartir.get(randomGlobal.nextInt(textosCompartir.size()));
+                        credibilidadAsignada = 92;
+                        break;
+                }
+
+                campoTexto.set(p, fraseSeleccionada);
+                campoCred.setInt(p, credibilidadAsignada);
+            } catch (Exception e) {
+                // Respaldo de seguridad
+            }
+        }
+
+        private Accion determinarAccionIdeal(Publicacion p) {
+            String texto = p.getTexto().toLowerCase();
+            
+            // Validar exactamente con base en las frases ingresadas
+            for (String f : textosReportar) {
+                if (texto.equals(f.toLowerCase())) return Accion.REPORTAR;
+            }
+            for (String f : textosIgnorar) {
+                if (texto.equals(f.toLowerCase())) return Accion.IGNORAR;
+            }
+            for (String f : textosCompartir) {
+                if (texto.equals(f.toLowerCase())) return Accion.COMPARTIR;
+            }
+            for (String f : textosVerificar) {
+                if (texto.equals(f.toLowerCase())) return Accion.VERIFICAR;
+            }
+
+            int cred = p.getCredibilidad();
+            if (cred < 30) return Accion.REPORTAR;
+            if (cred >= 80) return Accion.COMPARTIR;
+            if (cred >= 50) return Accion.VERIFICAR;
+            return Accion.IGNORAR;
+        }
+
+        private void iniciarMotorBurbujas() {
+            Random rand = new Random();
+
+            gameTimer = new Timer(70, e -> {
+                if (faseJuego == 1 && !turnoResuelto) {
+                    int w = getWidth();
+                    int h = getHeight();
+                    
+                    if (w < 300 || h < 300) return;
+
+                    int rectAncho = 620;
+                    int rectAlto = 280;
+                    int rectX = (w / 2) - (rectAncho / 2);
+                    int rectY = (h / 2) - (rectAlto / 2);
+
+                    if (burbujasActivas.size() < 8 && rand.nextInt(100) < 35) {
+                        int x, y;
+                        int intentos = 0;
+                        
+                        do {
+                            x = rand.nextInt(w - 100) + 50;
+                            y = rand.nextInt(h - 100) + 50;
+                            intentos++;
+                        } while (x >= rectX - 50 && x <= rectX + rectAncho + 50 && 
+                                 y >= rectY - 50 && y <= rectY + rectAlto + 50 && intentos < 30);
+
+                        Accion[] otrasAcciones = {Accion.REPORTAR, Accion.VERIFICAR, Accion.COMPARTIR, Accion.IGNORAR};
+                        Accion colorAsignado = (rand.nextInt(100) < 35) ? accionCorrectaRonda : otrasAcciones[rand.nextInt(otrasAcciones.length)];
+
+                        burbujasActivas.add(new Burbuja(x, y, colorAsignado));
+                    }
+                    repaint();
+                }
+            });
+            gameTimer.start();
+
+            timerCambioIconos = new Timer(2000, e -> {
+                if (faseJuego == 1 && !turnoResuelto) {
+                    Accion[] otrasAcciones = {Accion.REPORTAR, Accion.VERIFICAR, Accion.COMPARTIR, Accion.IGNORAR};
+                    for (Burbuja b : burbujasActivas) {
+                        b.accion = (rand.nextInt(100) < 40) ? accionCorrectaRonda : otrasAcciones[rand.nextInt(otrasAcciones.length)];
+                    }
+                    repaint();
+                }
+            });
+            timerCambioIconos.start();
+        }
+
+        private void detenerTimers() {
+            if (gameTimer != null) gameTimer.stop();
+            if (timerCambioIconos != null) timerCambioIconos.stop();
+        }
+
+        private void detengorTimersYPenalizar(Accion accionEquivocada) {
+            detenerTimers();
+            ventanaPadre.resolverTurnoBurbujas(accionEquivocada, false, 0);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2d = (Graphics2D) g;
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            int centroX = w / 2;
+            int centroY = h / 2;
+
+            int rectAncho = 620;
+            int rectAlto = 280;
+            int rectX = centroX - (rectAncho / 2);
+            int rectY = centroY - (rectAlto / 2);
+
+            g2d.setColor(Color.WHITE);
+            g2d.fillRoundRect(rectX, rectY, rectAncho, rectAlto, 25, 25);
+            g2d.setColor(new Color(41, 128, 185)); 
+            g2d.setStroke(new BasicStroke(6));
+            g2d.drawRoundRect(rectX, rectY, rectAncho, rectAlto, 25, 25);
+
+            Publicacion p = partida.publicacionActual();
+            Jugador j = partida.jugadorActual();
+
+            g2d.setColor(new Color(40, 40, 40));
+            g2d.setFont(Tema.subtitulo());
+            g2d.drawString("Analista: " + j.getNombre() + " (" + j.getRol().getEtiqueta() + ")", rectX + 30, rectY + 45);
+
+            g2d.setColor(new Color(100, 100, 100));
+            g2d.setFont(Tema.normal());
+            g2d.drawString("Publicado por " + p.getAutor(), rectX + 30, rectY + 75);
+
+            g2d.setColor(Color.BLACK);
+            g2d.setFont(Tema.destacado());
+            drawMultilineText(g2d, "\"" + p.getTexto() + "\"", rectX + 30, rectY + 115, rectAncho - 60);
+
+            g2d.setColor(new Color(120, 120, 120));
+            g2d.setFont(Tema.normal());
+            g2d.drawString("Credibilidad aparente: " + p.getCredibilidad() + "/100", rectX + 30, rectY + rectAlto - 25);
+
+            if (faseJuego == 0) {
+                g2d.setColor(new Color(180, 50, 50));
+                g2d.setFont(Tema.titulo());
+                g2d.drawString("¡Analiza el Post! Las burbujas aparecen en: " + contadorLectura + "s", centroX - 280, 40);
+            } else {
+                g2d.setColor(new Color(30, 100, 30));
+                g2d.setFont(Tema.subtitulo());
+                g2d.drawString("🎯 ¡Dispara a 8 burbujas correctas! Restantes: " + (OBJETIVO_BURBUJAS - burbujasExplotadasCorrectas), centroX - 220, 40);
+                
+                g2d.setFont(Tema.normal());
+                g2d.setColor(Color.DARK_GRAY);
+                g2d.drawString("🟣 Compartir | 🟢 Verificar | 🔵 Ignorar | 🔴 Reportar", centroX - 180, h - 20);
+            }
+
+            for (Burbuja b : burbujasActivas) {
+                g2d.setColor(b.getColor());
+                g2d.fillOval(b.x - 42, b.y - 42, 84, 84);
+                g2d.setColor(Color.WHITE);
+                g2d.setStroke(new BasicStroke(4));
+                g2d.drawOval(b.x - 42, b.y - 42, 84, 84);
+
+                g2d.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 28));
+                g2d.drawString(b.getSimbolo(), b.x - 16, b.y + 10);
+            }
+        }
+
+        private void drawMultilineText(Graphics2D g2d, String text, int x, int y, int maxWidth) {
+            java.awt.FontMetrics fm = g2d.getFontMetrics();
+            String[] words = text.split(" ");
+            StringBuilder line = new StringBuilder();
+            int currentY = y;
+
+            for (String word : words) {
+                if (fm.stringWidth(line + word + " ") < maxWidth) {
+                    line.append(word).append(" ");
+                } else {
+                    g2d.drawString(line.toString(), x, currentY);
+                    line = new StringBuilder(word + " ");
+                    currentY += fm.getHeight();
+                }
+            }
+            g2d.drawString(line.toString(), x, currentY);
+        }
+    }
+
+    static class Burbuja {
+        int x, y;
+        Accion accion;
+
+        public Burbuja(int x, int y, Accion accion) {
+            this.x = x;
+            this.y = y;
+            this.accion = accion;
+        }
+
+        public Color getColor() {
+            switch (accion) {
+                case REPORTAR: return new Color(231, 76, 60);    
+                case VERIFICAR: return new Color(46, 204, 113);  
+                case COMPARTIR: return new Color(155, 89, 182);  
+                default: return new Color(52, 152, 219);         
+            }
+        }
+
+        public String getSimbolo() {
+            switch (accion) {
+                case REPORTAR: return "🚨";
+                case VERIFICAR: return "🔍";
+                case COMPARTIR: return "🚀";
+                default: return "💤";
+            }
+        }
+    }
+
+    private void cargarTurno() {
+        if (partida.terminada() || partida.getTurno() > 4) {
+            finalizar();
+            return;
+        }
+
+        lblTurno.setText("Situación " + partida.getTurno() + " de 4");
+
+        propagarInfeccionGrafoGradual();
+
+        actualizarMarcador();
+        actualizarBitacora();
+        panelIndicadores.repaint();
+        panelArbol.revalidate();
+        panelArbol.repaint();
+
+        Component comp = pestanas.getComponentAt(0);
+        if (comp instanceof JPanel) {
+            for (Component hijo : ((JPanel)comp).getComponents()) {
+                if (hijo instanceof PanelMinijuegoBurbujas) {
+                    ((PanelMinijuegoBurbujas) hijo).iniciarRonda();
+                    break;
+                } else if (hijo instanceof JPanel) {
+                    for (Component nieto : ((JPanel)hijo).getComponents()) {
+                        if (nieto instanceof PanelMinijuegoBurbujas) {
+                            ((PanelMinijuegoBurbujas) nieto).iniciarRonda();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        lblTiempo.setText("Modo Puntuación por Velocidad");
+    }
+
+    private void resolverTurnoBurbujas(Accion accionElegida, boolean exitoDisparos, long milisegundosTardados) {
+        Jugador jugadorActual = partida.jugadorActual();
+        if (exitoDisparos) {
+            long tiempoActual = tiemposTotalesJugadores.getOrDefault(jugadorActual, 0L);
+            tiemposTotalesJugadores.put(jugadorActual, tiempoActual + milisegundosTardados);
+        }
+
+        Partida.ResultadoTurno r = partida.ejecutar(accionElegida);
+
+        int puntosExtraVelocidad = 0;
+        if (exitoDisparos) {
+            puntosExtraVelocidad = Math.max(20, (int)(8000 - milisegundosTardados) / 100);
+        }
+
+        StringBuilder msg = new StringBuilder();
+        if (exitoDisparos) {
+            msg.append("🎯 ¡EXCELENTE PUNTERÍA! Explotaste las 8 burbujas correctas.\n");
+            msg.append("⏱️ Tiempo de reacción: ").append(milisegundosTardados / 1000.0).append(" segundos.\n");
+            msg.append("⚡ ¡Bono de velocidad: +").append(puntosExtraVelocidad).append(" pts extra!\n\n");
+        } else {
+            msg.append("❌ ¡ERROR DE DISPARO! Le diste a una burbuja equivocada o fallaste.\n\n");
+        }
+        
+        int puntosTotalesTurno = r.puntos + puntosExtraVelocidad;
+        
+        msg.append(r.efecto.getMensaje()).append("\n\n");
+        msg.append("Puntos de turno: ").append(puntosTotalesTurno);
+        msg.append("     Reputación: ").append(r.reputacion >= 0 ? "+" : "").append(r.reputacion).append('\n');
+
+        Tema.instalarUI();
+        Tema.mostrarDialogo(this, "Resultado de la Situación", msg.toString());
+
+        cargarTurno();
+    }
+
+    private void actualizarMarcador() {
+        StringBuilder sb = new StringBuilder();
+        for (Jugador j : partida.getJugadores()) {
+            sb.append(j == partida.jugadorActual() ? "> " : "  ");
+            sb.append(String.format("%s - %s%n", j.getNombre(), j.getRol().getEtiqueta()));
+            sb.append(String.format("   %d pts | rep %d | %d ok %d err%n",
+                    j.getPuntos(), j.getReputacion(), j.getAciertos(), j.getErrores()));
+        }
+        areaMarcador.setText(sb.toString());
+    }
+
+    private void actualizarBitacora() {
+        StringBuilder sb = new StringBuilder();
+        for (String linea : partida.getBitacora()) {
+            sb.append("- ").append(linea).append('\n');
+        }
+        areaBitacora.setText(sb.toString());
+        areaBitacora.setCaretPosition(areaBitacora.getDocument().getLength());
+    }
+
+    private void finalizar() {
+        if (timerPropagacionGrafo != null) {
+            timerPropagacionGrafo.stop();
+        }
+        lblTiempo.setText("Campaña finalizada");
+        
+        List<Jugador> jugadoresOrdenados = new ArrayList<>(partida.getJugadores());
+        jugadoresOrdenados.sort((j1, j2) -> {
+            int compPuntos = Integer.compare(j2.getPuntos(), j1.getPuntos());
+            if (compPuntos != 0) {
+                return compPuntos;
+            } else {
+                long tiempo1 = tiemposTotalesJugadores.getOrDefault(j1, 0L);
+                long tiempo2 = tiemposTotalesJugadores.getOrDefault(j2, 0L);
+                return Long.compare(tiempo1, tiempo2);
+            }
+        });
+
+        Jugador ganador = jugadoresOrdenados.get(0);
+
+        String[] columnas = {"Nombre del Jugador", "Tiempo Total", "Puntos Totales"};
+        Object[][] datos = new Object[partida.getJugadores().size()][3];
+
+        for (int i = 0; i < partida.getJugadores().size(); i++) {
+            Jugador j = partida.getJugadores().get(i);
+            long tiempoMs = tiemposTotalesJugadores.getOrDefault(j, 0L);
+            datos[i][0] = j.getNombre() + " (" + j.getRol().getEtiqueta() + ")";
+            datos[i][1] = String.format("%.2f segundos", tiempoMs / 1000.0);
+            datos[i][2] = j.getPuntos() + " pts";
+        }
+
+        DefaultTableModel modeloTabla = new DefaultTableModel(datos, columnas) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        JTable tablaResultados = new JTable(modeloTabla);
+        tablaResultados.setRowHeight(30);
+        tablaResultados.setFont(Tema.normal());
+        tablaResultados.getTableHeader().setFont(Tema.indicadorNegrita());
+
+        final Jugador jugadorGanadorFinal = ganador;
+        tablaResultados.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                Jugador jActual = partida.getJugadores().get(row);
+                if (jActual.equals(jugadorGanadorFinal)) {
+                    c.setBackground(new Color(212, 239, 223)); 
+                    c.setForeground(new Color(20, 90, 50));
+                } else {
+                    c.setBackground(Color.WHITE);
+                    c.setForeground(Color.BLACK);
+                }
+                return c;
+            }
+        });
+
+        JScrollPane scrollTabla = new JScrollPane(tablaResultados);
+        scrollTabla.setPreferredSize(new Dimension(500, 150));
+
+        JPanel panelFinal = new JPanel(new BorderLayout(10, 10));
+        JLabel lblAnuncio = new JLabel("🏆 ¡CAMPAÑA FINALIZADA! Ganador (por puntos y mejor tiempo): " + ganador.getNombre(), JLabel.CENTER);
+        lblAnuncio.setFont(Tema.subtitulo());
+        lblAnuncio.setForeground(new Color(39, 110, 50));
+        
+        panelFinal.add(lblAnuncio, BorderLayout.NORTH);
+        panelFinal.add(scrollTabla, BorderLayout.CENTER);
+
+        Tema.instalarUI();
+        JOptionPane.showMessageDialog(this, panelFinal, "Resultados Finales de la Campaña", JOptionPane.INFORMATION_MESSAGE);
+
+        actualizarMarcador();
+        actualizarBitacora();
+        panelIndicadores.repaint();
+        panelArbol.repaint();
+    }
+
     private JPanel construirPestanaCiudad() {
         areaMarcador.setEditable(false);
         areaMarcador.setFont(Tema.mono());
@@ -243,8 +829,7 @@ public class VentanaJuego extends JFrame {
         area.setFont(Tema.mono());
         area.setMargin(new java.awt.Insets(14, 16, 14, 16));
         area.setText("ÁRBOL DE DECISIÓN (recorrido en PREORDEN)\n"
-                + "Nodos totales: " + partida.getArbolDecision().cantidadNodos() + "\n"
-                + "Nivel 1 = lo que decide el jugador. Nivel 2 = lo que la publicación era en realidad.\n\n"
+                + "Nodos totales: " + partida.getArbolDecision().cantidadNodos() + "\n\n"
                 + partida.getArbolDecision().recorridoPreorden());
         area.setCaretPosition(0);
 
@@ -258,29 +843,29 @@ public class VentanaJuego extends JFrame {
         return p;
     }
 
-    /** Construye la pestaña con el Grafo Social, líneas semitransparentes, nodos con 45% de transparencia y temporizador a 1280ms. */
     private JPanel construirPestanaRedSocial() {
         PanelConFondo panelRed = new PanelConFondo(new BorderLayout(), "/alcaldedigital/recursos/mapa_ciudad.jpg");
         panelRed.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
         
-        GrafoSocial grafo = new GrafoSocial();
-        grafo.inicializarMapaPrueba();
-
-        JPanel lienzo = new JPanel() {
+        panelLienzoGrafo = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 Graphics2D g2d = (Graphics2D) g;
                 g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                // Factores de escala basados en la resolución de referencia (1000 x 800)
-                double scaleX = (double) getWidth() / 1000.0;
-                double scaleY = (double) getHeight() / 800.0;
+                int w = getWidth();
+                int h = getHeight();
 
-                // 1. Dibujar aristas con transparencia
-                g2d.setColor(new Color(110, 70, 30, 120));
+                if (w <= 0 || h <= 0) return;
+
+                double scaleX = (double) w / 1000.0;
+                double scaleY = (double) h / 800.0;
+
+                g2d.setColor(new Color(90, 50, 20, 200));
                 g2d.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                for (NodoRed nodo : grafo.nodos) {
+                
+                for (NodoRed nodo : grafoSocial.nodos) {
                     int x1 = (int) (nodo.x * scaleX);
                     int y1 = (int) (nodo.y * scaleY);
                     for (NodoRed vecino : nodo.vecinos) {
@@ -290,56 +875,53 @@ public class VentanaJuego extends JFrame {
                     }
                 }
 
-                // 2. Dibujar nodos interactivos con 45% de transparencia (alfa 140)
-                for (NodoRed nodo : grafo.nodos) {
+                for (NodoRed nodo : grafoSocial.nodos) {
                     int x = (int) (nodo.x * scaleX);
                     int y = (int) (nodo.y * scaleY);
-
+                    
                     if (nodo.estaInfectado) {
-                        g2d.setColor(new Color(210, 50, 50, 140)); // Rojo alerta con 45% transparencia
+                        g2d.setColor(new Color(220, 50, 50, 230)); 
                     } else {
-                        g2d.setColor(new Color(40, 120, 200, 140)); // Azul seguro con 45% transparencia
+                        g2d.setColor(new Color(40, 120, 220, 220)); 
                     }
                     
                     g2d.fillOval(x - 16, y - 16, 32, 32);
-                    g2d.setColor(new Color(255, 255, 255, 200)); // Borde blanco sutil
-                    g2d.setStroke(new BasicStroke(2));
+                    g2d.setColor(Color.WHITE);
+                    g2d.setStroke(new BasicStroke(2.5f));
                     g2d.drawOval(x - 16, y - 16, 32, 32);
                 }
             }
         };
-        lienzo.setOpaque(false);
+        panelLienzoGrafo.setOpaque(false);
 
-        // Detector de clics para purificar nodos
-        lienzo.addMouseListener(new MouseAdapter() {
+        panelLienzoGrafo.addMouseListener(new MouseAdapter() {
             @Override
-            public void mouseClicked(MouseEvent e) {
+            public void mousePressed(MouseEvent e) {
+                int w = panelLienzoGrafo.getWidth();
+                int h = panelLienzoGrafo.getHeight();
+                if (w <= 0 || h <= 0) return;
+
+                double scaleX = (double) w / 1000.0;
+                double scaleY = (double) h / 800.0;
+
                 int mouseX = e.getX();
                 int mouseY = e.getY();
-                double scaleX = (double) lienzo.getWidth() / 1000.0;
-                double scaleY = (double) lienzo.getHeight() / 800.0;
 
-                for (NodoRed nodo : grafo.nodos) {
-                    int nodoXReal = (int) (nodo.x * scaleX);
-                    int nodoYReal = (int) (nodo.y * scaleY);
-                    double distancia = Math.sqrt(Math.pow(mouseX - nodoXReal, 2) + Math.pow(mouseY - nodoYReal, 2));
+                for (NodoRed nodo : grafoSocial.nodos) {
+                    int nodoX = (int) (nodo.x * scaleX);
+                    int nodoY = (int) (nodo.y * scaleY);
+
+                    double distancia = Math.sqrt(Math.pow(mouseX - nodoX, 2) + Math.pow(mouseY - nodoY, 2));
                     if (distancia <= 22) {
-                        nodo.estaInfectado = false;
-                        lienzo.repaint();
+                        nodo.estaInfectado = false; 
+                        panelLienzoGrafo.repaint();
                         break;
                     }
                 }
             }
         });
 
-        // Temporizador configurado exactamente a 1280 milisegundos
-        Timer timerRed = new Timer(1280, e -> {
-            grafo.propagarRumorBFS();
-            lienzo.repaint();
-        });
-        timerRed.start();
-
-        panelRed.add(lienzo, BorderLayout.CENTER);
+        panelRed.add(panelLienzoGrafo, BorderLayout.CENTER);
         return panelRed;
     }
 
@@ -349,201 +931,13 @@ public class VentanaJuego extends JFrame {
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         area.setFont(Tema.normal());
-        area.setText(textoAyuda());
-        area.setCaretPosition(0);
-        area.setMargin(new java.awt.Insets(18, 22, 18, 22));
-
+        area.setText("INSTRUCCIONES DEL MINIJUEGO DE BURBUJAS\nLee el post dentro del recuadro central y dispara con el ratón a 8 burbujas gigantes del color correcto que flotan a su alrededor (los colores cambian cada 2 segundos).\n\n🟣 Compartir\n🟢 Verificar\n🔵 Ignorar\n🔴 Reportar\n\nGana más puntos quien lo haga más rápido en las 4 situaciones.");
         JScrollPane sp = new JScrollPane(area);
-        sp.setBorder(BorderFactory.createEmptyBorder());
-        Tema.estilizarScroll(sp);
-
         JPanel p = new JPanel(new BorderLayout());
-        p.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
         p.add(sp, BorderLayout.CENTER);
         return p;
     }
 
-    private String textoAyuda() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("OBJETIVO DEL JUEGO\n");
-        sb.append("Ciudad Nova elige alcalde en pocos días. Tu misión es que la ciudad llegue a la votación ");
-        sb.append("con la mayor información verificada, confianza, convivencia y bienestar digital posibles, ");
-        sb.append("y con la menor desinformación y conflictos.\n\n");
-
-        sb.append("CÓMO SE JUEGA\n");
-        sb.append("En cada turno recibes una publicación del feed de Civitas y tienes ")
-          .append(Partida.SEGUNDOS_POR_TURNO).append(" segundos para decidir. Si se acaba el tiempo, ");
-        sb.append("la publicación sigue circulando sin control y la ciudad lo paga.\n\n");
-
-        sb.append("LOS CUATRO BOTONES\n");
-        sb.append("COMPARTIR - la difundes. Si era verdadera, informas; si era falsa, propagas el daño.\n");
-        sb.append("VERIFICAR - revisas antes de actuar. Es la acción más segura y la que más puntos da.\n");
-        sb.append("IGNORAR  - la dejas pasar. No hace daño, pero tampoco ayuda.\n");
-        sb.append("REPORTAR  - la sacas del feed. Excelente contra lo falso, grave si era cierto u opinión.\n\n");
-
-        sb.append("LOS ROLES\n");
-        for (alcaldedigital.modelo.Rol r : alcaldedigital.modelo.Rol.values()) {
-            sb.append(r.getEtiqueta()).append(" - ").append(r.getDescripcion()).append('\n');
-        }
-        sb.append('\n');
-
-        sb.append("LOS INDICADORES\n");
-        sb.append("Información verificada, Confianza, Convivencia y Bienestar digital: mientras más altos, mejor.\n");
-        sb.append("Desinformación y Conflictos: mientras más bajos, mejor.\n");
-        sb.append("La Salud global resume los seis y decide cómo termina la ciudad.\n\n");
-
-        sb.append("CÓMO SE GANA\n");
-        sb.append("Al cerrar la campaña se elige alcalde. Gana quien combine más puntos y más reputación, ");
-        sb.append("es decir, quien haya tomado más decisiones responsables. Pero si la ciudad termina ");
-        sb.append("desinformada, gana un alcalde de una ciudad rota: el verdadero resultado es el de todos.\n\n");
-
-        sb.append("ACCESIBILIDAD\n");
-        sb.append("La casilla 'Modo alto contraste' sube el contraste por encima de 7:1 y refuerza los ");
-        sb.append("indicadores con números, símbolos (+/-) y patrones, para que nada dependa solo del color.\n");
-        return sb.toString();
-    }
-
-    // ------------------------------------------------------------------
-    // Ciclo de turno
-    // ------------------------------------------------------------------
-
-    private void cargarTurno() {
-        if (partida.terminada()) {
-            finalizar();
-            return;
-        }
-        Publicacion p = partida.publicacionActual();
-        Jugador j = partida.jugadorActual();
-
-        lblTurno.setText("Turno " + partida.getTurno() + " de " + partida.getTotalTurnos());
-        lblJugador.setText("Decide: " + j.getNombre() + "  ·  " + j.getRol().getEtiqueta());
-        lblAutor.setText("Publicado por " + p.getAutor());
-        areaPublicacion.setText("\"" + p.getTexto() + "\"");
-        lblCredibilidad.setText("Credibilidad aparente: " + p.getCredibilidad()
-                + "/100     (clave en el AVL: " + p.claveAVL() + ")");
-
-        actualizarMarcador();
-        actualizarBitacora();
-        panelIndicadores.repaint();
-        panelArbol.revalidate();
-        panelArbol.repaint();
-
-        habilitarBotones(true);
-        iniciarCronometro();
-    }
-
-    private void iniciarCronometro() {
-        if (cronometro != null) {
-            cronometro.stop();
-        }
-        segundosRestantes = Partida.SEGUNDOS_POR_TURNO;
-        lblTiempo.setText("Tiempo: " + segundosRestantes + "s");
-        lblTiempo.setFont(Tema.titulo());
-        lblTiempo.setForeground(Tema.texto());
-
-        cronometro = new Timer(1000, e -> {
-            segundosRestantes--;
-            lblTiempo.setText("Tiempo: " + Math.max(0, segundosRestantes) + "s");
-            lblTiempo.setForeground(segundosRestantes <= 3 ? Tema.negativo() : Tema.texto());
-            if (segundosRestantes <= 0) {
-                ((Timer) e.getSource()).stop();
-                resolverTurno(Accion.IGNORAR, true);
-            }
-        });
-        cronometro.start();
-    }
-
-    private void resolverTurno(Accion accion, boolean porTiempo) {
-        if (cronometro != null) {
-            cronometro.stop();
-        }
-        habilitarBotones(false);
-
-        Partida.ResultadoTurno r = porTiempo ? partida.tiempoAgotado() : partida.ejecutar(accion);
-
-        StringBuilder msg = new StringBuilder();
-        if (porTiempo) {
-            msg.append("SE ACABÓ EL TIEMPO\n\n");
-        }
-        msg.append("Era: ").append(r.publicacion.getTipo().getEtiqueta()).append("\n\n");
-        msg.append(r.efecto.getMensaje()).append("\n\n");
-        msg.append("Ruta en el árbol de decisión:\n").append(r.rutaArbol).append("\n\n");
-        msg.append("Efecto en la ciudad: ").append(r.efecto.resumenDeltas()).append('\n');
-        msg.append("Puntos: ").append(r.puntos >= 0 ? "+" : "").append(r.puntos);
-        msg.append("     Reputación: ").append(r.reputacion >= 0 ? "+" : "").append(r.reputacion).append('\n');
-        if (r.retirada) {
-            msg.append("\nLa publicación fue ELIMINADA del árbol AVL. Mira la pestaña del árbol: se rebalanceó.");
-        }
-        if (r.evento != null) {
-            msg.append("\n\n").append(r.evento);
-        }
-
-        Tema.instalarUI();
-        Tema.mostrarDialogo(this, "Consecuencia de tu decisión", msg.toString());
-
-        cargarTurno();
-    }
-
-    private void habilitarBotones(boolean estado) {
-        for (Component c : panelBotones.getComponents()) {
-            c.setEnabled(estado);
-        }
-    }
-
-    private void actualizarMarcador() {
-        StringBuilder sb = new StringBuilder();
-        for (Jugador j : partida.getJugadores()) {
-            sb.append(j == partida.jugadorActual() ? "> " : "  ");
-            sb.append(String.format("%s - %s%n", j.getNombre(), j.getRol().getEtiqueta()));
-            sb.append(String.format("   %d pts | rep %d | %d ok %d err%n",
-                    j.getPuntos(), j.getReputacion(), j.getAciertos(), j.getErrores()));
-        }
-        areaMarcador.setText(sb.toString());
-    }
-
-    private void actualizarBitacora() {
-        StringBuilder sb = new StringBuilder();
-        for (String linea : partida.getBitacora()) {
-            sb.append("- ").append(linea).append('\n');
-        }
-        areaBitacora.setText(sb.toString());
-        areaBitacora.setCaretPosition(areaBitacora.getDocument().getLength());
-    }
-
-    /**
-     * Finaliza la partida al agotarse los turnos, mostrando el resumen final de la campaña,
-     * el alcalde electo, las estadísticas de los jugadores y la salud global de Ciudad Nova.
-     */
-    private void finalizar() {
-        habilitarBotones(false);
-        lblTiempo.setText("Campaña cerrada");
-        Jugador alcalde = partida.alcaldeElecto();
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("ELECCIÓN EN CIUDAD NOVA\n\n");
-        sb.append("Alcalde electo: ").append(alcalde.getNombre())
-          .append(" (").append(alcalde.getRol().getEtiqueta()).append(")\n\n");
-        sb.append("Marcador final:\n");
-        for (Jugador j : partida.getJugadores()) {
-            sb.append("  ").append(j.getNombre()).append(" - ")
-              .append(j.getPuntos()).append(" pts, reputación ").append(j.getReputacion()).append('\n');
-        }
-        sb.append("\nSalud global de la ciudad: ").append(partida.getCiudad().saludGlobal()).append("/100\n\n");
-        sb.append(partida.veredicto());
-
-        Tema.instalarUI();
-        Tema.mostrarDialogo(this, "Resultado final", sb.toString());
-        actualizarMarcador();
-        actualizarBitacora();
-        panelIndicadores.repaint();
-        panelArbol.repaint();
-    }
-
-    // ------------------------------------------------------------------
-    // Tema
-    // ------------------------------------------------------------------
-
-    /** Genera un borde con título legible adaptado al tema visual activo. */
     private static javax.swing.border.Border bordeTitulado(String titulo) {
         javax.swing.border.TitledBorder b = BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(Tema.borde(), 2), "  " + titulo.toUpperCase() + "  ");
@@ -555,22 +949,11 @@ public class VentanaJuego extends JFrame {
     private void aplicarTema() {
         Tema.instalarUI();
         pintar(getContentPane());
-
         lblTitulo.setFont(Tema.titulo());
         lblTurno.setFont(Tema.normal());
         lblTiempo.setFont(Tema.titulo());
-        lblJugador.setFont(Tema.subtitulo());
-        lblAutor.setFont(Tema.normal());
-        lblCredibilidad.setFont(Tema.normal());
-        areaPublicacion.setFont(Tema.destacado());
-        areaBitacora.setFont(Tema.mono());
-        areaMarcador.setFont(Tema.mono());
-        pestanas.setFont(Tema.subtitulo());
-
         lblTitulo.setForeground(Tema.texto());
         lblTurno.setForeground(Tema.textoSuave());
-        lblAutor.setForeground(Tema.textoSuave());
-        lblCredibilidad.setForeground(Tema.textoSuave());
         lblTiempo.setForeground(Tema.texto());
 
         barraSuperior.setBorder(BorderFactory.createCompoundBorder(
@@ -582,13 +965,6 @@ public class VentanaJuego extends JFrame {
         lblTiempo.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(Tema.borde(), 3),
                 BorderFactory.createEmptyBorder(3, 12, 3, 12)));
-
-        if (scrollMarcador != null) {
-            scrollMarcador.setBorder(bordeTitulado("Jugadores"));
-        }
-        if (scrollBitacora != null) {
-            scrollBitacora.setBorder(bordeTitulado("Consecuencias y eventos"));
-        }
         pestanas.revalidate();
         repaint();
     }
@@ -600,35 +976,10 @@ public class VentanaJuego extends JFrame {
         if (c instanceof JTextArea || c instanceof javax.swing.JViewport || c instanceof JScrollPane) {
             c.setBackground(Tema.panel());
         }
-        if (c instanceof JCheckBox) {
-            c.setBackground(Tema.fondo());
-            c.setFont(Tema.normal());
-            ((JCheckBox) c).setOpaque(false);
-        }
-        if (c instanceof JScrollPane) {
-            ((JScrollPane) c).getViewport().setBackground(Tema.panel());
-        }
-        if (c instanceof JLabel || c instanceof JTextArea || c instanceof JCheckBox) {
-            c.setForeground(Tema.texto());
-        }
-        if (c instanceof JButton && !Boolean.TRUE.equals(((JButton) c).getClientProperty("moderno"))) {
-            JButton btn = (JButton) c;
-            btn.setOpaque(true);
-            btn.setBackground(Tema.panel());
-            btn.setForeground(Tema.texto());
-            btn.setBorder(BorderFactory.createLineBorder(Tema.borde(), 2));
-        }
-        if (c instanceof JLabel) {
-            ((JLabel) c).setHorizontalAlignment(SwingConstants.LEFT);
-        }
         if (c instanceof java.awt.Container) {
             for (Component hijo : ((java.awt.Container) c).getComponents()) {
                 pintar(hijo);
             }
         }
-    }
-
-    public static Color fondoScroll() {
-        return Tema.panel();
     }
 }
