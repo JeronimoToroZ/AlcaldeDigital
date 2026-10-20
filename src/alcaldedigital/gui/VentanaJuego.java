@@ -235,6 +235,7 @@ public class VentanaJuego extends JFrame {
         JOptionPane.showMessageDialog(this, panelInstrucciones, "Instrucciones de la Partida", JOptionPane.INFORMATION_MESSAGE);
 
         cargarTurno();
+        Configuracion.instalarBrillo(this);   // brillo elegido en Ajustes
     }
 
     private JPanel construirBarraSuperior() {
@@ -247,6 +248,7 @@ public class VentanaJuego extends JFrame {
 
         JCheckBox chkContraste = new JCheckBox("Modo alto contraste");
         chkContraste.setFocusPainted(false);
+        chkContraste.setSelected(Tema.isAltoContraste());   // refleja el ajuste guardado
         chkContraste.addActionListener((ActionEvent e) -> {
             Tema.setAltoContraste(chkContraste.isSelected());
             aplicarTema();

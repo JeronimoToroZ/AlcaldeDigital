@@ -59,6 +59,7 @@ public class PantallaInicio extends JFrame {
         });
 
         PanelPortada panel = new PanelPortada();
+        Configuracion.agregarOyente(panel::repaint);
         panel.setLayout(null);   // posicionamos el botón a mano, encima de la imagen
         panel.add(btnStart);
 
@@ -93,6 +94,12 @@ public class PantallaInicio extends JFrame {
                 g2.drawImage(portada, 0, 0, getWidth(), getHeight(), null);
                 g2.dispose();
             }
+        }
+
+        @Override
+        public void paint(Graphics g) {
+            super.paint(g);
+            Configuracion.pintarBrillo(g, getWidth(), getHeight());
         }
 
         @Override

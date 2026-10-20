@@ -1,12 +1,9 @@
 package alcaldedigital;
 
+import alcaldedigital.gui.Configuracion;
+import alcaldedigital.gui.PantallaJugadores;
 import alcaldedigital.gui.VentanaJuego;
 import alcaldedigital.logica.Partida;
-import alcaldedigital.modelo.Jugador;
-import alcaldedigital.modelo.Rol;
-import java.util.ArrayList;
-import java.util.List;
-import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
@@ -29,57 +26,18 @@ public class Main {
             } catch (Exception ignorada) {
             }
 
+            Configuracion.aplicarGuardada();   // ajustes guardados (contraste, brillo...)
+
             // Primero se muestra la portada; al pulsar START continúa el flujo
             new alcaldedigital.gui.PantallaInicio(Main::iniciarPartida).setVisible(true);
         });
     }
 
-    /** Se ejecuta al pulsar START: registra jugadores y abre el tablero. */
+    /** Se ejecuta al pulsar START: abre el registro de jugadores y luego el tablero. */
     private static void iniciarPartida() {
-        List<Jugador> jugadores = configurarJugadores();
-        if (jugadores == null) {
-            System.exit(0);
-        }
-        Partida partida = new Partida(jugadores, 4);
-        new VentanaJuego(partida).setVisible(true);
-    }
-
-    /**
-     * Gestiona los diálogos interactivos para definir la cantidad de participantes,
-     * capturar sus nombres y asignarles sus respectivos roles de juego.
-     */
-    private static List<Jugador> configurarJugadores() {
-        String[] opciones = {"2 jugadores", "3 jugadores", "4 jugadores"};
-        int seleccion = JOptionPane.showOptionDialog(null,
-                "Bienvenido a ALCALDE DIGITAL.\nCuantos van a jugar?",
-                "Ciudad Nova", JOptionPane.DEFAULT_OPTION,
-                JOptionPane.QUESTION_MESSAGE, null, opciones, opciones[1]);
-        
-        if (seleccion < 0) {
-            return null;
-        }
-        
-        int cantidad = seleccion + 2;
-        Rol[] roles = Rol.values();
-        List<Jugador> jugadores = new ArrayList<>();
-
-        // Ciclo para registrar los datos individuales de cada jugador
-        for (int i = 0; i < cantidad; i++) {
-            String nombre = JOptionPane.showInputDialog(null,
-                    "Nombre del jugador " + (i + 1) + ":", "Jugador " + (i + 1));
-            
-            if (nombre == null || nombre.trim().isEmpty()) {
-                nombre = "Jugador " + (i + 1);
-            }
-
-            Object rolElegido = JOptionPane.showInputDialog(null,
-                    "Rol para " + nombre + ":", "Elegir rol",
-                    JOptionPane.QUESTION_MESSAGE, null, roles, roles[i % roles.length]);
-            
-            Rol rol = (rolElegido == null) ? roles[i % roles.length] : (Rol) rolElegido;
-            jugadores.add(new Jugador(nombre.trim(), rol));
-        }
-        
-        return jugadores;
+        new PantallaJugadores(jugadores -> {
+            Partida partida = new Partida(jugadores, 4);
+            new VentanaJuego(partida).setVisible(true);
+        }).setVisible(true);
     }
 }
