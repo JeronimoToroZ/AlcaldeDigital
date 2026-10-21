@@ -130,6 +130,25 @@ public class DialogoJuego extends JDialog {
         setVisible(true);
     }
 
+    /**
+     * Pregunta de sí/no con el estilo del juego (reemplaza a JOptionPane.showConfirmDialog).
+     * Devuelve true si el jugador eligió la primera opción.
+     */
+    public static boolean confirmar(Window padre, String titulo, String mensaje, String textoSi, String textoNo) {
+        final boolean[] respuesta = {false};
+        DialogoJuego d = new DialogoJuego(padre, titulo);
+        d.setContenido(parrafo(mensaje, 380, 16, CREMA));
+        BotonDorado si = new BotonDorado(textoSi, true);
+        si.addActionListener(e -> { respuesta[0] = true; d.dispose(); });
+        BotonDorado no = new BotonDorado(textoNo, false);
+        no.addActionListener(e -> d.dispose());
+        d.agregarBoton(si);
+        d.agregarBoton(no);
+        d.getRootPane().setDefaultButton(no);
+        d.mostrar();
+        return respuesta[0];
+    }
+
     // ------------------------------------------------------------------
     // Utilidades de estilo reutilizables por las subclases
     // ------------------------------------------------------------------
@@ -145,11 +164,42 @@ public class DialogoJuego extends JDialog {
         return l;
     }
 
-    /** Etiqueta con salto de línea automático al ancho indicado (en píxeles). */
+    /** Etiqueta con salto de línea automático a un ancho exacto en píxeles. */
     public static JLabel parrafo(String texto, int ancho, int tamano, Color color) {
-        JLabel l = new JLabel("<html><div style='width:" + ancho + "px'>" + html(texto) + "</div></html>");
-        l.setFont(fuente(Font.PLAIN, tamano));
+        return parrafo(texto, ancho, Font.PLAIN, tamano, color);
+    }
+
+    /**
+     * Párrafo que se parte en varias líneas sin pasarse del ancho (en píxeles).
+     * Las líneas se calculan aquí mismo con las medidas de la fuente y se unen
+     * con saltos de línea; así el texto nunca se corta, sin importar cómo
+     * escale Swing el HTML en cada sistema operativo.
+     */
+    public static JLabel parrafo(String texto, int ancho, int estilo, int tamano, Color color) {
+        Font f = fuente(estilo, tamano);
+        JLabel l = new JLabel();
+        l.setFont(f);
         l.setForeground(color);
+        FontMetrics fm = l.getFontMetrics(f);
+        StringBuilder sb = new StringBuilder("<html>");
+        String[] bloques = texto.split("\n");
+        for (int i = 0; i < bloques.length; i++) {
+            if (i > 0) {
+                sb.append("<br>");
+            }
+            StringBuilder linea = new StringBuilder();
+            for (String palabra : bloques[i].split(" ")) {
+                String prueba = linea.length() == 0 ? palabra : linea + " " + palabra;
+                if (fm.stringWidth(prueba) > ancho && linea.length() > 0) {
+                    sb.append(html(linea.toString())).append("<br>");
+                    linea = new StringBuilder(palabra);
+                } else {
+                    linea = new StringBuilder(prueba);
+                }
+            }
+            sb.append(html(linea.toString()));
+        }
+        l.setText(sb.append("</html>").toString());
         return l;
     }
 

@@ -1,50 +1,43 @@
 package alcaldedigital;
 
 import alcaldedigital.gui.Configuracion;
-import alcaldedigital.gui.PantallaJugadores;
-import alcaldedigital.gui.VentanaJuego;
+import alcaldedigital.gui.PantallaInicio;
+import alcaldedigital.gui.PantallaMapa;
+import alcaldedigital.gui.PantallaNombre;
 import alcaldedigital.logica.Partida;
+import alcaldedigital.modelo.Jugador;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 /**
- * Clase principal que inicializa el sistema, configura la interfaz gráfica
- * y gestiona el registro inicial de los participantes de la partida.
- * 
+ * Punto de entrada. Flujo de pantallas:
+ *   Portada (START) -> Nombre del jugador -> Mapa de niveles (grafo) -> Nivel de plataformas.
+ *
  * @author Naty
  */
 public class Main {
 
-    /**
-     * Punto de entrada de la aplicación. Configura el aspecto visual nativo
-     * y lanza el flujo inicial del juego mediante Swing.
-     */
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception ignorada) {
+                // si falla, Swing usa su aspecto por defecto
             }
-
-            Configuracion.aplicarGuardada();   // ajustes guardados (contraste, brillo...)
-
+            Configuracion.aplicarGuardada();   // ajustes guardados (contraste, brillo, sonido)
             mostrarPortada();
         });
     }
 
-    /**
-     * Muestra la portada; al pulsar START continúa el flujo.
-     * También se usa al terminar una campaña con "Volver al inicio".
-     */
+    /** Muestra la portada; al pulsar START se pide el nombre del jugador. */
     public static void mostrarPortada() {
-        new alcaldedigital.gui.PantallaInicio(Main::iniciarPartida).setVisible(true);
+        new PantallaInicio(Main::pedirNombre).setVisible(true);
     }
 
-    /** Se ejecuta al pulsar START: abre el registro de jugadores y luego el tablero. */
-    private static void iniciarPartida() {
-        new PantallaJugadores(jugadores -> {
-            Partida partida = new Partida(jugadores, 4);
-            new VentanaJuego(partida).setVisible(true);
+    private static void pedirNombre() {
+        new PantallaNombre(nombre -> {
+            Partida partida = new Partida(new Jugador(nombre));
+            new PantallaMapa(partida, Main::mostrarPortada).setVisible(true);
         }).setVisible(true);
     }
 }

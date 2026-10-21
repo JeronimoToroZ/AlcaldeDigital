@@ -2,117 +2,137 @@ package alcaldedigital.logica;
 
 import alcaldedigital.estructuras.ArbolAVL;
 import alcaldedigital.estructuras.ArbolDecision;
+import alcaldedigital.estructuras.GrafoNiveles;
+import alcaldedigital.estructuras.NodoNivel;
 import alcaldedigital.modelo.Accion;
 import alcaldedigital.modelo.EstadoCiudad;
 import alcaldedigital.modelo.Jugador;
 import alcaldedigital.modelo.Publicacion;
-import java.util.ArrayDeque;
+import alcaldedigital.modelo.TipoContenido;
 import java.util.ArrayList;
-import java.util.Deque;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
- * Motor de la partida. Es el unico punto donde se conectan las dos estructuras
- * con las reglas del juego:
+ * Motor de la campaña (un solo jugador). Es el único punto donde se conectan
+ * las estructuras de datos con las reglas del juego:
  *
- *   ArbolDecision -> decide QUE consecuencia tiene la accion.
- *   ArbolAVL      -> mantiene el feed ordenado por credibilidad y permite
- *                    buscar, consultar por rango y retirar publicaciones.
+ *   GrafoNiveles  -> qué niveles se pueden jugar (ganar uno desbloquea su subárbol).
+ *   ArbolDecision -> qué burbuja es la correcta y qué consecuencia tiene cada una.
+ *   ArbolAVL      -> el feed de Civitas ordenado por credibilidad; lo reportado se elimina.
+ *   GrafoSocial   -> por dónde se propaga el rumor del nivel (BFS) según los errores.
  *
- * La GUI no conoce ninguna estructura de datos: solo habla con esta clase.
+ * La interfaz gráfica no toca las estructuras directamente: solo habla con esta clase.
  */
 public class Partida {
 
-    public static final int SEGUNDOS_POR_TURNO = 30;
-
-    private final List<Jugador> jugadores;
+    private final Jugador jugador;
     private final EstadoCiudad ciudad;
     private final ArbolAVL feed;
     private final ArbolDecision arbolDecision;
     private final BancoPublicaciones banco;
-    private final Deque<Publicacion> pendientes;
-    private final List<String> bitacora;
+    private final GrafoNiveles niveles;
+    private final GrafoSocial red;
+    private final List<String> bitacora = new ArrayList<>();
+    private final List<String> textosUsados = new ArrayList<>();
+    private int siguienteId = 1;
 
-    private int turno;
-    private int indiceJugador;
-    private final int totalTurnos;
-
-    /**
-     * Inicializa los componentes de la partida, valida la cantidad de jugadores,
-     * genera el feed y lo distribuye entre el Árbol AVL y la cola de turnos pendientes.
-     */
-    public Partida(List<Jugador> jugadores, int publicacionesPorJugador) {
-        if (jugadores == null || jugadores.size() < 2 || jugadores.size() > 4) {
-            throw new IllegalArgumentException("La partida admite de 2 a 4 jugadores.");
-        }
-        this.jugadores = jugadores;
+    public Partida(Jugador jugador) {
+        this.jugador = jugador;
         this.ciudad = new EstadoCiudad();
         this.feed = new ArbolAVL();
         this.arbolDecision = new ArbolDecision();
         this.banco = new BancoPublicaciones();
-        this.pendientes = new ArrayDeque<>();
-        this.bitacora = new ArrayList<>();
-        this.turno = 0;
-        this.indiceJugador = 0;
-        this.totalTurnos = jugadores.size() * publicacionesPorJugador;
-
-        for (Publicacion p : banco.generarFeed(totalTurnos)) {
-            feed.insertar(p);      // entra al AVL ordenada por credibilidad
-            pendientes.addLast(p); // y a la cola de turnos
-        }
-        bitacora.add("Arranca la campana electoral en Ciudad Nova. "
-                + feed.getTamano() + " publicaciones en el feed, altura del AVL: "
-                + feed.getAlturaArbol() + ".");
+        this.niveles = GrafoNiveles.crearCampana();
+        this.red = new GrafoSocial();
+        this.red.inicializarMapaPrueba();
+        bitacora.add("Arranca la campana electoral en Ciudad Nova. " + jugador.getNombre()
+                + " entra a Civitas con " + niveles.cantidadVertices() + " niveles por delante.");
     }
 
     // ------------------------------------------------------------------
-    // Flujo de turnos
+    // Inicio de nivel
     // ------------------------------------------------------------------
-
-    /** Verifica si quedan turnos pendientes en la partida. */
-    public boolean hayTurnoPendiente() {
-        return !pendientes.isEmpty();
-    }
-
-    /** Retorna la publicacion correspondiente al turno actual sin removerla. */
-    public Publicacion publicacionActual() {
-        return pendientes.peekFirst();
-    }
-
-    /** Retorna el jugador al que le corresponde tomar la decision en este turno. */
-    public Jugador jugadorActual() {
-        return jugadores.get(indiceJugador);
-    }
-
-    /** Retorna el numero del turno actual (base 1). */
-    public int getTurno() {
-        return turno + 1;
-    }
-
-    /** Retorna el total de turnos programados para la partida. */
-    public int getTotalTurnos() {
-        return totalTurnos;
-    }
 
     /**
-     * Resuelve el turno actual.
-     *
-     * Paso 1: se baja por el arbol de decision con (accion, tipo real) -> Efecto.
-     * Paso 2: el efecto se escala por el rol y se aplica sobre la ciudad y el jugador.
-     * Paso 3: si el efecto lo pide, la publicacion se ELIMINA del AVL (queda retirada).
-     * Paso 4: pasa el turno y se dispara un evento aleatorio.
+     * Prepara un nivel: siembra un rumor en un lugar aleatorio de la ciudad y
+     * elige las 4 publicaciones que saldrán. En los niveles 1 y 2 sale una de
+     * cada tipo (para aprender los 4 símbolos); después el orden es libre.
+     * Cada publicación entra al AVL del feed.
      */
-    public ResultadoTurno ejecutar(Accion accion) {
-        Publicacion p = pendientes.pollFirst();
-        if (p == null) {
-            throw new IllegalStateException("No hay publicacion pendiente.");
+    public List<Publicacion> iniciarNivel(int numero) {
+        if (!niveles.estaDesbloqueado(numero)) {
+            throw new IllegalStateException("El nivel " + numero + " sigue bloqueado.");
         }
-        Jugador jugador = jugadorActual();
+        NodoRed origen = red.sembrarRumor(banco.getAzar());
+
+        List<TipoContenido> tipos = new ArrayList<>(Arrays.asList(TipoContenido.values()));
+        Collections.shuffle(tipos, banco.getAzar());
+        if (numero > 2) {
+            for (int i = 0; i < tipos.size(); i++) {
+                if (banco.getAzar().nextInt(100) < 40) {
+                    tipos.set(i, TipoContenido.values()[banco.getAzar().nextInt(TipoContenido.values().length)]);
+                }
+            }
+        }
+
+        List<Publicacion> lista = new ArrayList<>();
+        for (int i = 0; i < DificultadNivel.PUBLICACIONES_POR_NIVEL; i++) {
+            Publicacion p = banco.publicacionAleatoria(nuevoId(), tipos.get(i % tipos.size()), textosUsados);
+            textosUsados.add(p.getTexto());
+            feed.insertar(p);           // el feed (AVL) crece con cada publicación que aparece
+            lista.add(p);
+        }
+        bitacora.add("NIVEL " + numero + ": aparece un rumor en " + origen.nombre
+                + ". Feed: " + feed.getTamano() + " publicaciones, altura del AVL " + feed.getAlturaArbol() + ".");
+        return lista;
+    }
+
+    /** Id único para la clave del AVL (1..999); si ya existe en el feed, busca el siguiente. */
+    private int nuevoId() {
+        for (int intentos = 0; intentos < 999; intentos++) {
+            int id = siguienteId;
+            siguienteId = siguienteId % 999 + 1;
+            if (!idEnFeed(id)) {
+                return id;
+            }
+        }
+        throw new IllegalStateException("El feed esta lleno.");
+    }
+
+    private boolean idEnFeed(int id) {
+        for (Publicacion p : feed.inorden()) {
+            if (p.getId() == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** La burbuja correcta para esta publicación la decide el árbol de decisión. */
+    public Accion accionCorrecta(Publicacion p) {
+        return arbolDecision.accionIdeal(p.getTipo());
+    }
+
+    // ------------------------------------------------------------------
+    // Decisiones durante el nivel
+    // ------------------------------------------------------------------
+
+    /**
+     * Resuelve una decisión del jugador sobre una publicación:
+     *  1) baja por el árbol de decisión (acción, tipo real) y aplica el efecto a la ciudad;
+     *  2) si el efecto lo pide, ELIMINA la publicación del AVL (fue reportada);
+     *  3) mueve el rumor por el grafo: acierto = se contiene, error = avanza un salto (BFS).
+     * Se llama una vez al completar una publicación (acierto) y una vez por cada burbuja
+     * equivocada (error).
+     */
+    public ResultadoDecision resolver(Publicacion p, Accion accion) {
         boolean fueVerificacion = (accion == Accion.VERIFICAR);
+        boolean correcta = (accion == accionCorrecta(p));
 
         Efecto efecto = arbolDecision.resolver(accion, p.getTipo());
         efecto.aplicarSobre(ciudad, jugador.getRol(), fueVerificacion);
-
         int puntos = efecto.puntosPara(jugador.getRol(), fueVerificacion);
         int reputacion = efecto.reputacionPara(jugador.getRol());
         jugador.sumarPuntos(puntos);
@@ -121,122 +141,153 @@ public class Partida {
         if (fueVerificacion) {
             p.marcarVerificada();
         }
-        boolean retirada = false;
-        if (efecto.debeRetirarPublicacion()) {
-            retirada = feed.eliminar(p.claveAVL()); // eliminacion real en el AVL
+        if (efecto.debeRetirarPublicacion() && !p.estaRetirada()) {
+            feed.eliminar(p.claveAVL());   // eliminación real en el AVL
             p.marcarRetirada();
         }
 
-        String ruta = arbolDecision.rutaDe(accion, p.getTipo());
-        bitacora.add("T" + getTurno() + " " + jugador.getNombre() + " (" + jugador.getRol().getEtiqueta()
-                + ") -> " + accion.getEtiqueta() + " | " + efecto.getMensaje()
-                + " [" + efecto.resumenDeltas() + "] " + (puntos >= 0 ? "+" : "") + puntos + " pts");
-
-        String evento = null;
-        turno++;
-        indiceJugador = (indiceJugador + 1) % jugadores.size();
-        if (hayTurnoPendiente()) {
-            evento = banco.eventoAleatorio(ciudad);
-            bitacora.add(evento);
+        List<NodoRed> contagiados = new ArrayList<>();
+        List<NodoRed> limpiados = new ArrayList<>();
+        if (correcta) {
+            limpiados = red.contener();
+        } else {
+            contagiados = red.propagarPaso();
+            ciudad.aplicar(0, 0, 0, 0, contagiados.size(), 0);
         }
 
-        return new ResultadoTurno(p, accion, efecto, puntos, reputacion, ruta, retirada, evento);
+        String ruta = arbolDecision.rutaDe(accion, p.getTipo());
+        bitacora.add((correcta ? "ACIERTO " : "ERROR ") + accion.getEtiqueta() + " -> \"" + recortar(p.getTexto())
+                + "\" | " + efecto.getMensaje() + " (" + (puntos >= 0 ? "+" : "") + puntos + " pts)"
+                + (contagiados.isEmpty() ? "" : " El rumor llego a " + nombres(contagiados) + ".")
+                + (limpiados.isEmpty() ? "" : " Se limpio " + nombres(limpiados) + "."));
+        return new ResultadoDecision(p, accion, correcta, efecto, puntos, reputacion, ruta, contagiados, limpiados);
     }
 
-    /** Se llama cuando al jugador se le acaba el tiempo: cuenta como IGNORAR con castigo. */
-    public ResultadoTurno tiempoAgotado() {
-        ResultadoTurno r = ejecutar(Accion.IGNORAR);
+    /** Se acabó el tiempo de una publicación: nadie actuó y el rumor avanza. */
+    public ResultadoDecision tiempoAgotado(Publicacion p) {
+        ResultadoDecision r = resolver(p, Accion.IGNORAR);
+        if (r.correcta) {
+            // si justo era para ignorar, el tiempo agotado no se premia: el rumor avanza igual
+            red.propagarPaso();
+        }
         ciudad.aplicar(0, 0, 0, -1, 2, 1);
         bitacora.add("Se acabo el tiempo: la publicacion siguio circulando sin que nadie actuara.");
         return r;
     }
 
-    // ------------------------------------------------------------------
-    // Cierre de la partida
-    // ------------------------------------------------------------------
-
-    /** Indica si la partida ha finalizado al vaciarse la cola de publicaciones. */
-    public boolean terminada() {
-        return pendientes.isEmpty();
+    /** Puntos por cada burbuja correcta recolectada (no cuenta como acierto de decisión). */
+    public void sumarBurbuja(int puntos) {
+        jugador.sumarBonus(puntos);
     }
 
-    /** El alcalde electo sale del jugador con mejor combinacion de puntos y reputacion. */
-    public Jugador alcaldeElecto() {
-        Jugador mejor = jugadores.get(0);
-        for (Jugador j : jugadores) {
-            if (valorElectoral(j) > valorElectoral(mejor)) {
-                mejor = j;
+    /** Evento aleatorio entre publicaciones (requisito de componente aleatorio). */
+    public String eventoAleatorio() {
+        String e = banco.eventoAleatorio(ciudad);
+        bitacora.add(e);
+        return e;
+    }
+
+    // ------------------------------------------------------------------
+    // Fin de nivel y de campaña
+    // ------------------------------------------------------------------
+
+    /**
+     * Registra el resultado del nivel. Si ganó, lo marca en el grafo y devuelve
+     * los niveles que se acaban de desbloquear.
+     */
+    public List<Integer> terminarNivel(int numero, boolean gano, int vidasRestantes, int puntosNivel) {
+        if (!gano) {
+            bitacora.add("NIVEL " + numero + " perdido. El rumor quedo en " + red.cantidadInfectados()
+                    + " lugares de la ciudad.");
+            return new ArrayList<>();
+        }
+        int estrellas = Math.max(1, vidasRestantes);   // 3 vidas = 3 estrellas
+        jugador.sumarBonus(vidasRestantes * 25);
+        List<Integer> nuevos = niveles.completar(numero, estrellas, puntosNivel);
+        bitacora.add("NIVEL " + numero + " superado con " + estrellas + " estrella(s). "
+                + (nuevos.isEmpty() ? "" : "Se desbloquean: " + nuevos + "."));
+        return nuevos;
+    }
+
+    /** La elección se habilita cuando el jugador gana un nivel final (una hoja del grafo). */
+    public boolean eleccionDisponible() {
+        for (NodoNivel n : niveles.getNodos()) {
+            if (niveles.esHoja(n.getNumero()) && n.isCompletado()) {
+                return true;
             }
         }
-        return mejor;
+        return false;
     }
 
-    private int valorElectoral(Jugador j) {
-        return j.getPuntos() + j.getReputacion() * 2;
+    /**
+     * Porcentaje de votos del jugador en la elección: depende de cómo dejó la ciudad
+     * (salud global) y de su reputación. Así las decisiones definen el resultado final.
+     */
+    public int porcentajeVotos() {
+        double v = ciudad.saludGlobal() * 0.6 + jugador.getReputacion() * 0.4;
+        return (int) Math.max(5, Math.min(95, Math.round(v)));
     }
 
     /** Retorna el veredicto final de la ciudad en funcion de su salud global. */
     public String veredicto() {
         int salud = ciudad.saludGlobal();
         if (salud >= 75) {
-            return "Ciudad Nova cerro las elecciones con una comunidad digital saludable. Lo lograron.";
+            return "Ciudad Nova cerro las elecciones con una comunidad digital saludable. Lo lograste.";
         }
         if (salud >= 50) {
             return "Ciudad Nova sobrevivio la campana, pero quedaron heridas: aun circula desinformacion.";
         }
-        return "Ciudad Nova termino dividida y desinformada. La proxima vez, verifiquen antes de compartir.";
+        return "Ciudad Nova termino dividida y desinformada. La proxima vez, verifica antes de compartir.";
     }
 
     // ------------------------------------------------------------------
     // Accesores para la GUI
     // ------------------------------------------------------------------
 
-    public EstadoCiudad getCiudad() {
-        return ciudad;
+    public Jugador getJugador() { return jugador; }
+    public EstadoCiudad getCiudad() { return ciudad; }
+    public ArbolAVL getFeed() { return feed; }
+    public ArbolDecision getArbolDecision() { return arbolDecision; }
+    public GrafoNiveles getNiveles() { return niveles; }
+    public GrafoSocial getRed() { return red; }
+    public List<String> getBitacora() { return bitacora; }
+
+    private static String recortar(String t) {
+        return t.length() <= 45 ? t : t.substring(0, 42) + "...";
     }
 
-    public ArbolAVL getFeed() {
-        return feed;
+    private static String nombres(List<NodoRed> lista) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lista.size(); i++) {
+            sb.append(i == 0 ? "" : ", ").append(lista.get(i).nombre);
+        }
+        return sb.toString();
     }
 
-    public ArbolDecision getArbolDecision() {
-        return arbolDecision;
-    }
-
-    public List<Jugador> getJugadores() {
-        return jugadores;
-    }
-
-    public List<String> getBitacora() {
-        return bitacora;
-    }
-
-    /** Habilidad del Periodista: lo mas sospechoso del feed, via consulta por rango en el AVL. */
-    public List<Publicacion> publicacionesSospechosas() {
-        return feed.menosCreiblesQue(35);
-    }
-
-    /** Resultado inmutable de un turno, para que la GUI lo muestre. */
-    public static class ResultadoTurno {
+    /** Resultado inmutable de una decisión, para que la GUI lo muestre. */
+    public static class ResultadoDecision {
         public final Publicacion publicacion;
         public final Accion accion;
+        public final boolean correcta;
         public final Efecto efecto;
         public final int puntos;
         public final int reputacion;
         public final String rutaArbol;
-        public final boolean retirada;
-        public final String evento;
+        public final List<NodoRed> contagiados;
+        public final List<NodoRed> limpiados;
 
-        public ResultadoTurno(Publicacion publicacion, Accion accion, Efecto efecto, int puntos,
-                            int reputacion, String rutaArbol, boolean retirada, String evento) {
+        public ResultadoDecision(Publicacion publicacion, Accion accion, boolean correcta, Efecto efecto,
+                                 int puntos, int reputacion, String rutaArbol,
+                                 List<NodoRed> contagiados, List<NodoRed> limpiados) {
             this.publicacion = publicacion;
             this.accion = accion;
+            this.correcta = correcta;
             this.efecto = efecto;
             this.puntos = puntos;
             this.reputacion = reputacion;
             this.rutaArbol = rutaArbol;
-            this.retirada = retirada;
-            this.evento = evento;
+            this.contagiados = contagiados;
+            this.limpiados = limpiados;
         }
     }
 }

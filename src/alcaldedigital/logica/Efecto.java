@@ -90,6 +90,16 @@ public class Efecto {
         return retirarPublicacion;
     }
 
+    /** Puntos base de la hoja (sin escalar por rol). El árbol los usa para hallar la acción ideal. */
+    public int getPuntosBase() {
+        return puntos;
+    }
+
+    /** Cuánto cambia la desinformación: si sube, el rumor se propaga por la red de la ciudad. */
+    public int getDeltaDesinformacion() {
+        return dDesinformacion;
+    }
+
     /** Resumen legible de los deltas, para el log de la partida. */
     public String resumenDeltas() {
         StringBuilder sb = new StringBuilder();

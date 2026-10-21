@@ -121,19 +121,19 @@ public class DialogoAjustes extends JDialog {
         // --- Música ---
         c.gridy = 4;
         c.insets = new Insets(14, 0, 2, 0);
-        JLabel lblVol = etiqueta("Volumen de la música: " + Configuracion.getVolumenMusica() + "%");
+        JLabel lblVol = etiqueta("Volumen del sonido: " + Configuracion.getVolumenMusica() + "%");
         p.add(lblVol, c);
         JSlider volumen = deslizador(0, 100, Configuracion.getVolumenMusica());
         volumen.setEnabled(Configuracion.isMusicaActiva());
         volumen.addChangeListener(e -> {
             Configuracion.setVolumenMusica(volumen.getValue());
-            lblVol.setText("Volumen de la música: " + volumen.getValue() + "%");
+            lblVol.setText("Volumen del sonido: " + volumen.getValue() + "%");
         });
         c.gridy = 5;
         c.insets = new Insets(0, 0, 2, 0);
         p.add(volumen, c);
 
-        JCheckBox silencio = new JCheckBox("Silenciar música", !Configuracion.isMusicaActiva());
+        JCheckBox silencio = new JCheckBox("Silenciar sonido", !Configuracion.isMusicaActiva());
         estilo(silencio);
         silencio.addActionListener(e -> {
             Configuracion.setMusicaActiva(!silencio.isSelected());

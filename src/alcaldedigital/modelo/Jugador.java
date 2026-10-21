@@ -1,6 +1,6 @@
 package alcaldedigital.modelo;
 
-/** Un jugador de la partida: su rol, su puntaje y su reputacion. */
+/** El jugador de la campaña: su nombre, su puntaje y su reputacion. */
 public class Jugador {
 
     private final String nombre;
@@ -21,6 +21,19 @@ public class Jugador {
         this.reputacion = 50;
         this.aciertos = 0;
         this.errores = 0;
+    }
+
+    /**
+     * Jugador individual: ya no se elige rol, así que juega como Ciudadano
+     * (multiplicadores neutros en el árbol de decisión).
+     */
+    public Jugador(String nombre) {
+        this(nombre, Rol.CIUDADANO);
+    }
+
+    /** Puntos extra (por burbuja recolectada o bonos) que no cuentan como acierto ni error. */
+    public void sumarBonus(int p) {
+        this.puntos += p;
     }
 
     /**
