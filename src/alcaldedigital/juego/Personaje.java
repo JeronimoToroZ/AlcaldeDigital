@@ -15,8 +15,8 @@ package alcaldedigital.juego;
  */
 public class Personaje {
 
-    public static final double ANCHO = 30;
-    public static final double ALTO = 46;
+    public static final double ANCHO = 34;
+    public static final double ALTO = 62;
 
     private static final double GRAVEDAD = 0.65;
     private static final double VEL_SALTO = -13.2;
@@ -29,8 +29,10 @@ public class Personaje {
     public double y;
     public double vx;
     public double vy;
-    public boolean enSuelo;
+    public boolean enSuelo = true;   // empieza parado en el suelo (pose "quieto", p5)
     public boolean mirandoDerecha = true;
+    /** Ticks que dura la pose de aterrizaje (agachado) después de caer de un salto. */
+    public int ticksAterrizaje;
 
     private int coyote;
     private int bufferSalto;
@@ -91,6 +93,11 @@ public class Personaje {
 
         // ---- gravedad y caída sobre plataformas ----
         double pieAntes = y + ALTO;
+        boolean estabaEnElAire = !enSuelo;
+        double velocidadCaida = vy;
+        if (ticksAterrizaje > 0) {
+            ticksAterrizaje--;
+        }
         vy = Math.min(CAIDA_MAX, vy + GRAVEDAD);
         y += vy;
         enSuelo = false;
@@ -101,6 +108,9 @@ public class Personaje {
                     y = p.y - ALTO;
                     vy = 0;
                     enSuelo = true;
+                    if (estabaEnElAire && velocidadCaida > 5) {
+                        ticksAterrizaje = 9;   // pose de aterrizaje un instante
+                    }
                     x += p.getDesplazamiento();   // la plataforma móvil lo arrastra
                     x = Math.max(0, Math.min(mundo.getAncho() - ANCHO, x));
                     break;
@@ -138,6 +148,7 @@ public class Personaje {
         y = Mundo.SUELO_Y - ALTO - 120;
         vx = 0;
         vy = 0;
+        ticksAterrizaje = 0;
     }
 
     public double getDistanciaRecorrida() {

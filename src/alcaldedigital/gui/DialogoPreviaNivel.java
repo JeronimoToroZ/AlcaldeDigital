@@ -38,14 +38,10 @@ public class DialogoPreviaNivel extends DialogoJuego {
         datos.add(etiqueta(d.segundosPorPublicacion + " segundos por publicación · 4 publicaciones",
                 Font.PLAIN, 15, CREMA));
         datos.add(etiqueta(d.huecos + " huecos en el camino · 3 vidas", Font.PLAIN, 15, CREMA));
-        if (d.amplitudMovimiento > 0) {
-            datos.add(etiqueta("Las burbujas se mueven de lado a lado", Font.PLAIN, 15, ORO));
-        }
+        datos.add(etiqueta("Las burbujas cambian de lugar cada " + d.segundosReubicacion + " s",
+                Font.BOLD, 15, ORO));
         if (d.plataformasMoviles > 0) {
             datos.add(etiqueta("Hay plataformas móviles", Font.PLAIN, 15, ORO));
-        }
-        if (d.segundosCambioSimbolos > 0) {
-            datos.add(etiqueta("¡Los símbolos cambian cada " + d.segundosCambioSimbolos + " s!", Font.BOLD, 15, ROJO));
         }
         if (n.isCompletado()) {
             datos.add(etiqueta("Ya lo ganaste con " + n.getEstrellas() + " estrella(s). Puedes mejorar.",

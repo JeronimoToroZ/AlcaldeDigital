@@ -8,13 +8,15 @@ integración con la mecánica del juego y visualización del grafo.
 
 ## 0. Cómo es el juego ahora
 
-Portada → nombre del jugador → **mapa de niveles (grafo)** → nivel de plataformas.
+Portada → ¿cuántos juegan? (2, 3 o 4) → nombre y rol de cada uno (roles sin repetir)
+→ **mapa de niveles (grafo)** → cada nivel se juega **por turnos**: una ronda por jugador,
+con un aviso antes de cada ronda, cronómetro y, al final, tabla de puntuaciones con podio.
 
 En cada nivel aparece arriba una publicación de Civitas. El jugador corre y salta
 recolectando **solo** las burbujas de la acción correcta (Compartir, Verificar,
-Ignorar o Reportar). Tiene 3 vidas y debe resolver 4 publicaciones. Cada nivel pide
-más burbujas y agrega dificultad (burbujas que se mueven, plataformas móviles,
-símbolos que cambian solos).
+Ignorar o Reportar): 3 por publicación, 4 publicaciones, 3 vidas. Las burbujas se
+generan en otro lugar cada 2,0 s en el nivel 1 y 0,1 s menos por nivel (1,4 s en el 7).
+Entre menos tarde el jugador, más puntos (bono por velocidad).
 
 ---
 
@@ -31,7 +33,8 @@ símbolos que cambian solos).
 
 **Problema que resuelve:** decidir qué niveles se pueden jugar.
 Regla: un nivel está desbloqueado si no tiene predecesores (N1) o si **alguno** de
-sus predecesores ya fue ganado. Ganar N2 abre N4 y N5, pero no N6 ni N7.
+sus predecesores ya fue ganado. Un nivel se marca como ganado cuando al menos un
+jugador lo supera en su ronda. Ganar N2 abre N4 y N5, pero no N6 ni N7.
 
 **¿Por qué grafo y no árbol?** Hoy el mapa tiene forma de árbol, pero un árbol no
 permite que un nivel tenga dos padres. Con el grafo se puede agregar, por ejemplo,
@@ -73,7 +76,7 @@ quiénes lo reciben, cuántos, qué tan rápido y qué consecuencias genera.
   Además, cada lugar nuevo sube la desinformación de la ciudad.
 - Cada publicación **bien resuelta** ejecuta `contener()`: calcula distancias con BFS
   desde el origen y limpia los lugares más lejanos (el rumor retrocede).
-- El panel derecho del nivel muestra el grafo en vivo; el mensaje del juego dice a
+- El botón del mapa (barra superior del nivel) abre el grafo en vivo, con los indicadores y la salud de la ciudad; el mensaje del juego dice a
   qué lugares llegó o de cuáles se limpió.
 
 **Operaciones:** `distanciasDesde` (BFS con niveles = "qué tan rápido", en saltos),
@@ -102,7 +105,7 @@ Todo pasa por `logica/Partida.java`: la interfaz no toca las estructuras directa
 ## 3. Dónde mostrarlo en la sustentación
 
 - **Mapa:** ganar N1 y ver cómo se abren N2 y N3 (animación + aristas doradas).
-- **Nivel:** equivocarse a propósito y ver el rumor avanzar en el panel derecho.
+- **Nivel:** equivocarse a propósito y abrir el botón del mapa para ver el rumor avanzar.
 - **Botón "Ciudad y estructuras"** (en el mapa): pestañas con la lista de adyacencia,
   BFS, DFS, caminos, la red con los saltos de cada lugar, el AVL y el árbol de decisión
   con la acción ideal por tipo.
@@ -120,6 +123,7 @@ Todo pasa por `logica/Partida.java`: la interfaz no toca las estructuras directa
 | Elementos motivadores | Estrellas, sonidos, partículas, mensajes, desbloqueo animado, elecciones finales |
 | Elección del alcalde | Votos = 60 % salud de la ciudad + 40 % reputación |
 
-> Nota: por decisión del equipo, esta versión es de **un jugador** y sin roles
-> (el enunciado pide 2–4 jugadores). El enum `Rol` se conserva para retomarlo en el
-> modo multijugador de la entrega final.
+> Multijugador: es **local por turnos** (2 a 4 jugadores en el mismo computador, roles
+> distintos y obligatorios). El rol de cada jugador cambia cuánto pesan sus decisiones
+> en el árbol (multiplicadores de `Rol`). La versión cliente-servidor con sockets queda
+> para la entrega final.

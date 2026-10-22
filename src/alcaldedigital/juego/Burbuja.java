@@ -11,8 +11,8 @@ public class Burbuja {
 
     public static final double RADIO = 22;
 
-    public final double xBase;
-    public final double yBase;
+    public double xBase;
+    public double yBase;
     public Accion accion;
     public boolean viva = true;
     public int ticksParaReaparecer;
@@ -27,6 +27,12 @@ public class Burbuja {
         this.yBase = yBase;
         this.accion = accion;
         this.fase = fase;
+    }
+
+    /** La lleva a otro lugar del mapa (cuando se "genera" de nuevo). */
+    public void moverA(double x, double y) {
+        xBase = x;
+        yBase = y;
     }
 
     /** Posición actual: flota arriba-abajo y se mueve de lado según la amplitud del nivel. */

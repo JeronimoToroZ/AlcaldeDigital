@@ -66,9 +66,12 @@ public class PanelPlataformas extends JPanel {
         public final int errores;
         public final int publicacionesResueltas;
         public final int lugaresConRumor;
+        /** Tiempo que tardó el jugador en la ronda (sin contar pausas ni la cuenta regresiva). */
+        public final double segundos;
 
         ResultadoNivel(boolean gano, int vidas, int puntos, int correctas, int errores,
-                       int publicacionesResueltas, int lugaresConRumor) {
+                       int publicacionesResueltas, int lugaresConRumor, double segundos) {
+            this.segundos = segundos;
             this.gano = gano;
             this.vidas = vidas;
             this.puntos = puntos;
@@ -115,7 +118,8 @@ public class PanelPlataformas extends JPanel {
     private int invulnerable;
     private int temblor;
     private int destelloRojo;
-    private int ticksCambioSimbolos;
+    private int ticksReubicacion;
+    private int ticksJugados;   // cronómetro de la ronda (no cuenta la cuenta regresiva ni la pausa)
     private final List<double[]> particulas = new ArrayList<>();   // x, y, vx, vy, vida, rgb
     private final List<TextoFlotante> textos = new ArrayList<>();
     private final List<Aviso> avisos = new ArrayList<>();
@@ -139,7 +143,8 @@ public class PanelPlataformas extends JPanel {
         this.publicaciones = partida.iniciarNivel(numeroNivel);
         this.puntosAlEmpezar = partida.getJugador().getPuntos();
 
-        fondo = BotonImagen.cargar("/alcaldedigital/recursos/fondo_transparente.png");
+        BufferedImage f = BotonImagen.cargar("/alcaldedigital/recursos/ftransparente.png");
+        fondo = f != null ? f : BotonImagen.cargar("/alcaldedigital/recursos/fondo_transparente.png");
         for (Accion a : Accion.values()) {
             BufferedImage img = BotonImagen.cargar("/alcaldedigital/recursos/" + a.name().toLowerCase() + ".png");
             if (img != null) {
@@ -147,10 +152,8 @@ public class PanelPlataformas extends JPanel {
             }
         }
 
-        for (double[] punto : mundo.getPuntosBurbuja()) {
-            if (punto[0] > 200) {   // nada encima del punto de partida
-                burbujas.add(new Burbuja(punto[0], punto[1], Accion.IGNORAR, azar.nextDouble() * 6));
-            }
+        for (int i = 0; i < dificultad.cantidadBurbujas; i++) {
+            burbujas.add(new Burbuja(0, 0, Accion.IGNORAR, azar.nextDouble() * 6));
         }
 
         setFocusable(true);
@@ -186,6 +189,8 @@ public class PanelPlataformas extends JPanel {
     }
 
     public int getVidas() { return vidas; }
+    public double getSegundosJugados() { return ticksJugados / 60.0; }
+    public int getPuntosRonda() { return partida.getJugador().getPuntos() - puntosAlEmpezar; }
     public int getIndicePublicacion() { return indicePublicacion; }
 
     // ------------------------------------------------------------------
@@ -244,6 +249,9 @@ public class PanelPlataformas extends JPanel {
     private void actualizar() {
         tick++;
         ticksFase++;
+        if (fase == Fase.JUGANDO || fase == Fase.ENTRE_PUBLICACIONES) {
+            ticksJugados++;
+        }
         mundo.actualizar(tick);
         actualizarEfectos();
 
@@ -253,6 +261,7 @@ public class PanelPlataformas extends JPanel {
                 for (Burbuja b : burbujas) {
                     b.edad++;
                 }
+                moverJugador();   // sin control: queda quieto en el suelo (pose p5)
                 if (ticksFase >= 180) {
                     cambiarFase(Fase.JUGANDO);
                 }
@@ -276,7 +285,8 @@ public class PanelPlataformas extends JPanel {
                     boolean gano = vidas > 0;
                     alTerminar.nivelTerminado(new ResultadoNivel(gano, vidas,
                             partida.getJugador().getPuntos() - puntosAlEmpezar, correctasTotales, errores,
-                            indicePublicacion + (gano ? 1 : 0), partida.getRed().cantidadInfectados()));
+                            indicePublicacion + (gano ? 1 : 0), partida.getRed().cantidadInfectados(),
+                            ticksJugados / 60.0));
                 }
                 return;
             case JUGANDO:
@@ -296,16 +306,9 @@ public class PanelPlataformas extends JPanel {
             ticksRestantes = dificultad.segundosPorPublicacion * 60;
         }
 
-        // símbolos que cambian solos (niveles altos)
-        if (dificultad.segundosCambioSimbolos > 0) {
-            ticksCambioSimbolos--;
-            if (ticksCambioSimbolos <= 0) {
-                asignarSimbolos();
-                for (Burbuja b : burbujas) {
-                    b.gracia = 40;   // 2/3 de segundo para apartarse si una cambió encima del jugador
-                }
-                ticksCambioSimbolos = dificultad.segundosCambioSimbolos * 60;
-            }
+        // las burbujas se generan en otro lugar cada X segundos (menos tiempo en niveles altos)
+        if (--ticksReubicacion <= 0) {
+            reubicarBurbujas();
         }
     }
 
@@ -339,11 +342,28 @@ public class PanelPlataformas extends JPanel {
         accionCorrecta = partida.accionCorrecta(p);   // la decide el árbol de decisión
         correctasPublicacion = 0;
         ticksRestantes = dificultad.segundosPorPublicacion * 60;
-        ticksCambioSimbolos = dificultad.segundosCambioSimbolos * 60;
-        for (Burbuja b : burbujas) {
-            b.viva = true;
-            b.edad = 0;
-            b.gracia = 0;
+        reubicarBurbujas();
+    }
+
+    /**
+     * Genera de nuevo todas las burbujas en lugares al azar, separadas entre sí
+     * (DISTANCIA_MINIMA_BURBUJAS) y lejos del jugador, con símbolos nuevos.
+     * Las que ya se recolectaron también vuelven a aparecer.
+     */
+    private void reubicarBurbujas() {
+        ticksReubicacion = (int) Math.round(dificultad.segundosReubicacion * 60);
+        List<double[]> lugares = mundo.elegirPosiciones(burbujas.size(), DificultadNivel.DISTANCIA_MINIMA_BURBUJAS,
+                jugador.centroX(), jugador.centroY(), azar);
+        for (int i = 0; i < burbujas.size(); i++) {
+            Burbuja b = burbujas.get(i);
+            if (i < lugares.size()) {
+                b.moverA(lugares.get(i)[0], lugares.get(i)[1]);
+                b.viva = true;
+                b.edad = 0;
+                b.gracia = 0;
+            } else {
+                b.viva = false;   // no cupo con la separación mínima
+            }
         }
         asignarSimbolos();
     }
@@ -380,26 +400,9 @@ public class PanelPlataformas extends JPanel {
     }
 
     private void actualizarBurbujas() {
-        int vivasCorrectas = 0;
-        for (Burbuja b : burbujas) {
-            if (b.viva && b.accion == accionCorrecta) {
-                vivasCorrectas++;
-            }
-        }
         for (Burbuja b : burbujas) {
             if (!b.viva) {
-                // reaparece después de un rato, lejos del jugador
-                if (--b.ticksParaReaparecer <= 0 && Math.abs(b.xBase - jugador.centroX()) > 220) {
-                    b.viva = true;
-                    b.edad = 0;
-                    boolean forzarCorrecta = vivasCorrectas < faltan() + 1;
-                    b.accion = forzarCorrecta || azar.nextDouble() < dificultad.proporcionCorrectas
-                            ? accionCorrecta : accionIncorrecta();
-                    if (b.accion == accionCorrecta) {
-                        vivasCorrectas++;
-                    }
-                }
-                continue;
+                continue;   // vuelve a aparecer en la siguiente reubicación
             }
             b.edad++;
             if (b.gracia > 0) {
@@ -411,7 +414,6 @@ public class PanelPlataformas extends JPanel {
             }
             if (b.accion == accionCorrecta) {
                 recolectarCorrecta(b);
-                vivasCorrectas--;
                 if (fase != Fase.JUGANDO) {
                     return;
                 }
@@ -426,7 +428,6 @@ public class PanelPlataformas extends JPanel {
 
     private void recolectarCorrecta(Burbuja b) {
         b.viva = false;
-        b.ticksParaReaparecer = 150 + azar.nextInt(150);
         correctasPublicacion++;
         correctasTotales++;
         partida.sumarBurbuja(PUNTOS_BURBUJA);
@@ -447,7 +448,6 @@ public class PanelPlataformas extends JPanel {
             for (Burbuja otra : burbujas) {
                 if (otra.viva) {
                     otra.viva = false;
-                    otra.ticksParaReaparecer = 0;
                     explosion(otra.x(tick, dificultad.amplitudMovimiento), otra.y(tick), 0xFFFFFF, 3);
                 }
             }
@@ -464,7 +464,6 @@ public class PanelPlataformas extends JPanel {
 
     private void recolectarIncorrecta(Burbuja b) {
         b.viva = false;
-        b.ticksParaReaparecer = 150 + azar.nextInt(150);
         errores++;
         Sonido.burbujaIncorrecta();
         double bx = b.x(tick, dificultad.amplitudMovimiento);
@@ -624,14 +623,30 @@ public class PanelPlataformas extends JPanel {
         }
         dibujarPublicacion(g2, w, contraste);
         dibujarVidas(g2, contraste);
+        dibujarCronometro(g2, contraste);
         dibujarProgreso(g2, w, contraste);
         dibujarAvisos(g2, w, h);
         dibujarMensajesCentrales(g2, w, h);
         g2.dispose();
     }
 
+    // ---- Paleta del escenario: sale del fondo (atardecer lila/rosa) y del personaje
+    //      (gorro y botas rojas, chaleco azul, mangas amarillas, estrella dorada) ----
+    private static final Color CIELO_ARRIBA = new Color(0xF3, 0xEC, 0xF8);
+    private static final Color CIELO_ABAJO = new Color(0xFF, 0xF1, 0xE6);
+    private static final Color PIEDRA_CLARA = new Color(0xF6, 0xE4, 0xEE);   // borde superior del suelo
+    private static final Color PIEDRA_BRILLO = new Color(0xF4, 0xA8, 0x72);  // reflejo naranja del atardecer
+    private static final Color PIEDRA_ARRIBA = new Color(0x8E, 0x6C, 0xA8);  // lila de los edificios
+    private static final Color PIEDRA_ABAJO = new Color(0x4A, 0x32, 0x66);
+    private static final Color MADERA_ARRIBA = new Color(0xC2, 0x55, 0x3E);  // rojo del gorro y las botas
+    private static final Color MADERA_ABAJO = new Color(0x7E, 0x2E, 0x2A);
+    private static final Color MOVIL_ARRIBA = new Color(0x58, 0x92, 0xC8);   // azul del chaleco
+    private static final Color MOVIL_ABAJO = new Color(0x2F, 0x5A, 0x8C);
+    private static final Color DORADO = new Color(0xF4, 0xC4, 0x4E);         // estrella del gorro / mangas
+    private static final Color SOMBRA_LILA = new Color(0x3A, 0x22, 0x55, 70);
+
     private void dibujarFondo(Graphics2D g2, int w, int h, double camX, double vista, boolean contraste) {
-        g2.setPaint(new GradientPaint(0, 0, new Color(0xF4, 0xD9, 0xB8), 0, h, new Color(0xC9, 0xB3, 0xD6)));
+        g2.setPaint(new GradientPaint(0, 0, CIELO_ARRIBA, 0, h, CIELO_ABAJO));
         g2.fillRect(0, 0, w, h);
         if (fondo != null) {
             // el fondo se recorre más lento que el mundo (efecto de profundidad / parallax)
@@ -661,25 +676,29 @@ public class PanelPlataformas extends JPanel {
                 g2.drawRect(x, y, ancho, alto);
                 return;
             }
-            g2.setPaint(new GradientPaint(0, y, new Color(0x9A, 0x77, 0x55), 0, Mundo.ALTO, new Color(0x4A, 0x33, 0x25)));
+            // cuerpo de piedra lila (como los edificios del fondo)
+            g2.setPaint(new GradientPaint(0, y, PIEDRA_ARRIBA, 0, Mundo.ALTO, PIEDRA_ABAJO));
             g2.fillRect(x, y, ancho, alto);
-            // ladrillos
-            g2.setColor(new Color(0, 0, 0, 40));
+            // bloques de piedra
+            g2.setColor(new Color(0x2E, 0x1B, 0x44, 60));
             g2.setStroke(new BasicStroke(1.5f));
-            for (int fila = 0; y + 18 + fila * 26 < Mundo.ALTO; fila++) {
-                int fy = y + 18 + fila * 26;
+            for (int fila = 0; y + 20 + fila * 26 < Mundo.ALTO; fila++) {
+                int fy = y + 20 + fila * 26;
                 g2.drawLine(x, fy, x + ancho, fy);
-                int desfase = (fila % 2) * 30;
-                for (int bx = x + desfase; bx < x + ancho; bx += 60) {
+                int desfase = (fila % 2) * 32;
+                for (int bx = x + desfase; bx < x + ancho; bx += 64) {
                     g2.drawLine(bx, fy, bx, fy + 26);
                 }
             }
-            // borde superior de piedra clara
-            g2.setColor(new Color(0xEF, 0xE2, 0xC6));
-            g2.fillRect(x, y, ancho, 12);
-            g2.setColor(new Color(0xC9, 0xA9, 0x7E));
-            g2.fillRect(x, y + 12, ancho, 4);
-            g2.setColor(new Color(0x6B, 0x4A, 0x33));
+            // brillo cálido del atardecer en las juntas de arriba
+            g2.setColor(new Color(0xF4, 0xA8, 0x72, 45));
+            g2.fillRect(x, y + 16, ancho, 10);
+            // borde superior claro con filo naranja
+            g2.setColor(PIEDRA_CLARA);
+            g2.fillRect(x, y, ancho, 11);
+            g2.setColor(PIEDRA_BRILLO);
+            g2.fillRect(x, y + 11, ancho, 4);
+            g2.setColor(new Color(0x3A, 0x22, 0x55));
             g2.fillRect(x, y, 3, alto);
             g2.fillRect(x + ancho - 3, y, 3, alto);
             return;
@@ -694,31 +713,36 @@ public class PanelPlataformas extends JPanel {
             g2.drawRoundRect(x, y, ancho, alto, 8, 8);
             return;
         }
-        // sombra
-        g2.setColor(new Color(0, 0, 0, 45));
-        g2.fillRoundRect(x + 4, y + 6, ancho, alto, 10, 10);
-        Color arriba = movil ? new Color(0x6E, 0x86, 0x96) : new Color(0x9B, 0x6A, 0x3F);
-        Color abajo = movil ? new Color(0x3E, 0x50, 0x5C) : new Color(0x5E, 0x3B, 0x22);
-        g2.setPaint(new GradientPaint(0, y, arriba, 0, y + alto, abajo));
+        // sombra lila suave
+        g2.setColor(SOMBRA_LILA);
+        g2.fillRoundRect(x + 4, y + 7, ancho, alto, 10, 10);
+        // tablón rojo (fijas) o azul (móviles), con borde dorado
+        g2.setPaint(new GradientPaint(0, y, movil ? MOVIL_ARRIBA : MADERA_ARRIBA,
+                0, y + alto, movil ? MOVIL_ABAJO : MADERA_ABAJO));
         g2.fillRoundRect(x, y, ancho, alto, 10, 10);
-        g2.setColor(DialogoJuego.ORO);
+        g2.setColor(DORADO);
         g2.fillRoundRect(x, y, ancho, 4, 4, 4);
-        g2.setColor(new Color(0, 0, 0, 50));
-        for (int tx = x + 30; tx < x + ancho - 10; tx += 36) {
+        g2.setColor(new Color(0x3A, 0x1A, 0x22, 70));
+        for (int tx = x + 28; tx < x + ancho - 10; tx += 34) {
             g2.drawLine(tx, y + 5, tx, y + alto - 2);
         }
+        // remaches dorados en las puntas
+        g2.setColor(DORADO);
+        g2.fillOval(x + 5, y + alto / 2, 4, 4);
+        g2.fillOval(x + ancho - 9, y + alto / 2, 4, 4);
         if (movil) {
             // flechas que indican que se mueve
-            g2.setColor(new Color(0xE9, 0xC4, 0x7A, 200));
-            int cy = y + alto / 2 + 1;
-            g2.fillPolygon(new int[]{x + 6, x + 13, x + 13}, new int[]{cy, cy - 4, cy + 4}, 3);
-            g2.fillPolygon(new int[]{x + ancho - 6, x + ancho - 13, x + ancho - 13}, new int[]{cy, cy - 4, cy + 4}, 3);
+            g2.setColor(new Color(0xFF, 0xF1, 0xC8, 220));
+            int cy = y + alto / 2 + 2;
+            g2.fillPolygon(new int[]{x + 14, x + 21, x + 21}, new int[]{cy, cy - 4, cy + 4}, 3);
+            g2.fillPolygon(new int[]{x + ancho - 14, x + ancho - 21, x + ancho - 21}, new int[]{cy, cy - 4, cy + 4}, 3);
         }
     }
 
     private void dibujarBurbujas(Graphics2D g2, double camX, double vista, boolean contraste) {
-        boolean avisoCambio = dificultad.segundosCambioSimbolos > 0 && fase == Fase.JUGANDO
-                && ticksCambioSimbolos < 60 && (tick / 6) % 2 == 0;
+        // justo antes de cambiar de lugar, las burbujas se desvanecen (aviso visual)
+        boolean avisoCambio = fase == Fase.JUGANDO && ticksReubicacion < 18;
+        float alfaAviso = Math.max(0.15f, ticksReubicacion / 18f);
         int amp = dificultad.amplitudMovimiento;
         Font letra = new Font(FUENTE, Font.BOLD, 13);
         for (Burbuja b : burbujas) {
@@ -731,7 +755,7 @@ public class PanelPlataformas extends JPanel {
             }
             double aparicion = Math.min(1.0, b.edad / 15.0);
             double r = Burbuja.RADIO * (0.4 + 0.6 * aparicion);
-            float alfa = avisoCambio ? 0.45f : b.gracia > 0 ? 0.7f : (float) aparicion;
+            float alfa = avisoCambio ? alfaAviso : b.gracia > 0 ? 0.7f : (float) aparicion;
             java.awt.Composite c = g2.getComposite();
             g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alfa));
             // halo
@@ -766,7 +790,7 @@ public class PanelPlataformas extends JPanel {
         }
         if (sprite.isDisponible()) {
             if (jugador.enSuelo) {
-                g2.setColor(new Color(0, 0, 0, 50));   // sombra en el suelo
+                g2.setColor(SOMBRA_LILA);   // sombra en el suelo
                 g2.fill(new java.awt.geom.Ellipse2D.Double(jugador.x - 2, jugador.y + Personaje.ALTO - 4,
                         Personaje.ANCHO + 4, 8));
             }
@@ -946,6 +970,32 @@ public class PanelPlataformas extends JPanel {
         g2.setColor(contraste ? Color.WHITE : DialogoJuego.CREMA);
         g2.setFont(new Font(FUENTE, Font.BOLD, 13));
         g2.drawString("Vidas  ·  Nivel " + dificultad.nivel, x, y + 46);
+    }
+
+    /** Cronómetro de la ronda: entre menos tiempo, más puntos al final. */
+    private void dibujarCronometro(Graphics2D g2, boolean contraste) {
+        int x = 10, y = 82, ancho = 140, alto = 52;
+        panelHud(g2, x, y, ancho, alto, contraste);
+        // reloj dibujado (sin depender de emojis)
+        int cx = x + 22, cy = y + 26;
+        g2.setColor(contraste ? Color.WHITE : DialogoJuego.ORO);
+        g2.setStroke(new BasicStroke(2f));
+        g2.drawOval(cx - 10, cy - 10, 20, 20);
+        g2.drawLine(cx, cy, cx, cy - 6);
+        g2.drawLine(cx, cy, cx + 5, cy + 2);
+        g2.setFont(new Font(FUENTE, Font.PLAIN, 11));
+        g2.setColor(contraste ? Color.WHITE : DialogoJuego.CREMA_SUAVE);
+        g2.drawString(partida.getJugador().getNombre(), x + 40, y + 19);
+        g2.setFont(new Font(FUENTE, Font.BOLD, 18));
+        g2.setColor(contraste ? new Color(255, 255, 0) : DialogoJuego.CREMA);
+        g2.drawString(formatoTiempo(ticksJugados / 60.0), x + 40, y + 41);
+    }
+
+    /** 83.4 segundos -> "1:23.4" */
+    public static String formatoTiempo(double segundos) {
+        int min = (int) (segundos / 60);
+        double resto = segundos - min * 60;
+        return String.format("%d:%04.1f", min, resto);
     }
 
     private static Path2D corazon(double x, double y, double t) {

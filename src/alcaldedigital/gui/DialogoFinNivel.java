@@ -5,7 +5,6 @@ import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
@@ -14,27 +13,22 @@ import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.Window;
 import java.awt.geom.Path2D;
-import java.util.List;
 import javax.swing.BoxLayout;
-import javax.swing.ImageIcon;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 
 /**
- * Resultado de un nivel: estrellas (una por vida que quedó), cifras del nivel,
- * cómo quedó el rumor en la red de la ciudad y qué niveles se desbloquearon.
+ * Resultado de la ronda de UN jugador: estrellas (una por vida que le quedó),
+ * tiempo, puntos (con el bono por velocidad) y cómo quedó el rumor en la ciudad.
  */
 public class DialogoFinNivel extends DialogoJuego {
 
-    public enum Opcion { MAPA, REINTENTAR }
-
-    private Opcion opcion = Opcion.MAPA;
-
     public DialogoFinNivel(Window padre, Partida partida, int nivel, PanelPlataformas.ResultadoNivel r,
-                           List<Integer> desbloqueados) {
-        super(padre, r.gano ? "¡Nivel " + nivel + " superado!" : "Nivel " + nivel + " no superado");
+                           int bonoTiempo, int puntosRonda, String textoContinuar) {
+        super(padre, r.gano ? "¡" + partida.getJugador().getNombre() + " superó el nivel " + nivel + "!"
+                            : partida.getJugador().getNombre() + " no superó el nivel " + nivel);
 
         JPanel cuerpo = new JPanel();
         cuerpo.setOpaque(false);
@@ -46,7 +40,7 @@ public class DialogoFinNivel extends DialogoJuego {
 
         String frase = r.gano
                 ? (r.vidas == 3 ? "¡Perfecto! No perdiste ninguna vida." : "Bien hecho. Cada decisión cuenta.")
-                : "Resolviste " + r.publicacionesResueltas + " de 4 publicaciones. ¡Inténtalo de nuevo!";
+                : "Resolviste " + r.publicacionesResueltas + " de 4 publicaciones.";
         JLabel lblFrase = etiqueta(frase, Font.ITALIC, 16, CREMA);
         lblFrase.setAlignmentX(0.5f);
         cuerpo.add(lblFrase);
@@ -54,13 +48,21 @@ public class DialogoFinNivel extends DialogoJuego {
 
         JPanel cifras = new JPanel(new GridLayout(1, 4, 10, 0));
         cifras.setOpaque(false);
-        cifras.add(cifra("Puntos", (r.puntos >= 0 ? "+" : "") + r.puntos, r.puntos >= 0 ? ORO : ROJO));
+        cifras.add(cifra("Tiempo", PanelPlataformas.formatoTiempo(r.segundos), CREMA));
+        cifras.add(cifra("Puntos", (puntosRonda >= 0 ? "+" : "") + puntosRonda, puntosRonda >= 0 ? ORO : ROJO));
         cifras.add(cifra("Vidas", r.vidas + " / 3", r.vidas > 0 ? VERDE : ROJO));
-        cifras.add(cifra("Correctas", String.valueOf(r.correctas), VERDE));
         cifras.add(cifra("Errores", String.valueOf(r.errores), r.errores == 0 ? VERDE : ROJO));
         cifras.setAlignmentX(0.5f);
         cuerpo.add(cifras);
-        cuerpo.add(espacio(12));
+        cuerpo.add(espacio(10));
+
+        if (r.gano) {
+            JLabel bono = etiqueta("Bono por velocidad: +" + bonoTiempo + " pts   ·   Bono por vidas: +"
+                    + (r.vidas * 25) + " pts", Font.BOLD, 14, ORO);
+            bono.setAlignmentX(0.5f);
+            cuerpo.add(bono);
+            cuerpo.add(espacio(10));
+        }
 
         int total = partida.getRed().nodos.size();
         Tarjeta red = new Tarjeta(new BorderLayout(0, 4), r.lugaresConRumor > total / 2 ? ROJO : null);
@@ -73,56 +75,12 @@ public class DialogoFinNivel extends DialogoJuego {
         red.setAlignmentX(0.5f);
         cuerpo.add(red);
 
-        if (!desbloqueados.isEmpty()) {
-            cuerpo.add(espacio(12));
-            Tarjeta nuevos = new Tarjeta(new BorderLayout(0, 6), VERDE);
-            nuevos.add(etiqueta("¡Nuevos niveles desbloqueados!", Font.BOLD, 15, VERDE), BorderLayout.NORTH);
-            JPanel iconos = new JPanel(new FlowLayout(FlowLayout.CENTER, 14, 0));
-            iconos.setOpaque(false);
-            for (int n : desbloqueados) {
-                ImageIcon ic = icono("n" + n + ".png", 54);
-                JLabel l = new JLabel("Nivel " + n, ic, SwingConstants.CENTER);
-                l.setVerticalTextPosition(SwingConstants.BOTTOM);
-                l.setHorizontalTextPosition(SwingConstants.CENTER);
-                l.setFont(fuente(Font.BOLD, 13));
-                l.setForeground(CREMA);
-                iconos.add(l);
-            }
-            nuevos.add(iconos, BorderLayout.CENTER);
-            nuevos.setAlignmentX(0.5f);
-            cuerpo.add(nuevos);
-        } else if (r.gano && partida.getNiveles().esHoja(nivel)) {
-            cuerpo.add(espacio(12));
-            JLabel fin = parrafo("¡Llegaste al final de esta rama de la campaña! Ya puedes ver los resultados "
-                    + "de las elecciones desde el mapa.", 520, 14, ORO);
-            fin.setAlignmentX(0.5f);
-            cuerpo.add(fin);
-        }
-
         setContenido(cuerpo);
 
-        if (r.gano) {
-            BotonDorado mapa = new BotonDorado("Volver al mapa", true);
-            mapa.addActionListener(e -> { opcion = Opcion.MAPA; dispose(); });
-            BotonDorado repetir = new BotonDorado("Repetir nivel", false);
-            repetir.addActionListener(e -> { opcion = Opcion.REINTENTAR; dispose(); });
-            agregarBoton(mapa);
-            agregarBoton(repetir);
-            getRootPane().setDefaultButton(mapa);
-        } else {
-            BotonDorado reintentar = new BotonDorado("Reintentar", true);
-            reintentar.addActionListener(e -> { opcion = Opcion.REINTENTAR; dispose(); });
-            BotonDorado mapa = new BotonDorado("Volver al mapa", false);
-            mapa.addActionListener(e -> { opcion = Opcion.MAPA; dispose(); });
-            agregarBoton(reintentar);
-            agregarBoton(mapa);
-            getRootPane().setDefaultButton(reintentar);
-        }
-    }
-
-    public Opcion elegir() {
-        mostrar();
-        return opcion;
+        BotonDorado continuar = new BotonDorado(textoContinuar, true);
+        continuar.addActionListener(e -> dispose());
+        agregarBoton(continuar);
+        getRootPane().setDefaultButton(continuar);
     }
 
     private static JPanel cifra(String nombre, String valor, Color color) {

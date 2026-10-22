@@ -3,15 +3,15 @@ package alcaldedigital;
 import alcaldedigital.gui.Configuracion;
 import alcaldedigital.gui.PantallaInicio;
 import alcaldedigital.gui.PantallaMapa;
-import alcaldedigital.gui.PantallaNombre;
+import alcaldedigital.gui.PantallaJugadores;
 import alcaldedigital.logica.Partida;
-import alcaldedigital.modelo.Jugador;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 /**
  * Punto de entrada. Flujo de pantallas:
- *   Portada (START) -> Nombre del jugador -> Mapa de niveles (grafo) -> Nivel de plataformas.
+ *   Portada (START) -> ¿Cuántos juegan? (j2, j3, j4) -> Nombre y rol de cada uno
+ *   -> Mapa de niveles (grafo) -> cada nivel se juega por turnos, uno por jugador.
  *
  * @author Naty
  */
@@ -29,14 +29,14 @@ public class Main {
         });
     }
 
-    /** Muestra la portada; al pulsar START se pide el nombre del jugador. */
+    /** Muestra la portada; al pulsar START se registran los jugadores. */
     public static void mostrarPortada() {
-        new PantallaInicio(Main::pedirNombre).setVisible(true);
+        new PantallaInicio(Main::registrarJugadores).setVisible(true);
     }
 
-    private static void pedirNombre() {
-        new PantallaNombre(nombre -> {
-            Partida partida = new Partida(new Jugador(nombre));
+    private static void registrarJugadores() {
+        new PantallaJugadores(jugadores -> {
+            Partida partida = new Partida(jugadores);
             new PantallaMapa(partida, Main::mostrarPortada).setVisible(true);
         }).setVisible(true);
     }

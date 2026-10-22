@@ -158,7 +158,8 @@ public class DialogoJuego extends JDialog {
     }
 
     public static JLabel etiqueta(String texto, int estilo, int tamano, Color color) {
-        JLabel l = new JLabel(texto);
+        // si trae flechas u otros símbolos, va como HTML para poder darles una fuente que sí los tenga
+        JLabel l = new JLabel(tieneSimbolos(texto) ? "<html>" + html(texto) + "</html>" : texto);
         l.setFont(fuente(estilo, tamano));
         l.setForeground(color);
         return l;
@@ -205,8 +206,26 @@ public class DialogoJuego extends JDialog {
 
     /** Escapa caracteres especiales para poder poner texto libre dentro de HTML. */
     public static String html(String texto) {
-        return texto.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        String s = texto.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\n", "<br>");
+        // Georgia no trae dibujo para las flechas: en Windows salían como cuadritos.
+        // Cada símbolo se escribe con "Dialog", la fuente lógica de Java que sí los tiene.
+        for (char c : SIMBOLOS.toCharArray()) {
+            s = s.replace(String.valueOf(c), "<font face='Dialog'>" + c + "</font>");
+        }
+        return s;
+    }
+
+    /** Símbolos que la fuente Georgia no dibuja. */
+    private static final String SIMBOLOS = "\u2190\u2192\u2191\u2193\u25BC";
+
+    public static boolean tieneSimbolos(String texto) {
+        for (char c : SIMBOLOS.toCharArray()) {
+            if (texto.indexOf(c) >= 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Espacio vertical vacío (para separar bloques dentro de un BoxLayout). */
@@ -305,7 +324,8 @@ public class DialogoJuego extends JDialog {
         public BotonDorado(String texto, boolean principal) {
             super(texto);
             this.principal = principal;
-            setFont(fuente(Font.BOLD, 16));
+            // si el texto trae flechas, se usa "Dialog" para que no salgan cuadritos
+            setFont(tieneSimbolos(texto) ? new Font("Dialog", Font.BOLD, 15) : fuente(Font.BOLD, 16));
             setForeground(principal ? CAFE_OSCURO : CREMA);
             setContentAreaFilled(false);
             setBorderPainted(false);

@@ -1,6 +1,7 @@
 package alcaldedigital.gui;
 
 import alcaldedigital.logica.Partida;
+import alcaldedigital.logica.ResultadoRonda;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -11,49 +12,41 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.util.ArrayList;
-import java.util.List;
 import javax.swing.BorderFactory;
-import javax.swing.BoxLayout;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.Timer;
 
 /**
- * Ventana de un nivel: el juego de plataformas en el centro, una barra superior
- * con Pausa / Ayuda / Ajustes y, a la derecha, cómo va la ciudad: el grafo por
- * donde se propaga el rumor, los indicadores y el tamaño del feed (AVL).
+ * Ventana de un nivel: el juego de plataformas ocupa todo el espacio y arriba hay
+ * una barra con Pausa / Mapa / Ayuda / Ajustes. El botón del mapa abre cómo va la
+ * ciudad: el grafo por donde se propaga el rumor, los indicadores y la salud.
  */
 public class VentanaNivel extends JFrame {
 
     /** Se llama al cerrar el nivel para volver al mapa. */
     public interface AlVolver {
-        /**
-         * @param desbloqueados niveles que se abrieron con esta victoria (vacío si perdió)
-         * @param reintentar    true si el jugador pidió repetir el nivel
-         */
-        void volver(List<Integer> desbloqueados, boolean reintentar);
+        /** @param resultado lo que hizo el jugador de turno en esta ronda */
+        void volver(ResultadoRonda resultado);
     }
 
     private final Partida partida;
     private final int numero;
     private final AlVolver alVolver;
+    private final String textoContinuar;
     private final PanelPlataformas juego;
-    private final JLabel lblRumor = new JLabel();
-    private final JLabel lblFeed = new JLabel();
-    private final IndicadoresMini indicadores;
-    private final Timer refresco;
     private boolean cerrado;
 
-    public VentanaNivel(Partida partida, int numero, AlVolver alVolver) {
+    /**
+     * @param textoContinuar texto del botón al terminar (por ejemplo "Siguiente jugador")
+     */
+    public VentanaNivel(Partida partida, int numero, String textoContinuar, AlVolver alVolver) {
+        this.textoContinuar = textoContinuar;
         this.partida = partida;
         this.numero = numero;
         this.alVolver = alVolver;
         this.juego = new PanelPlataformas(partida, numero, this::alTerminar);
-        this.indicadores = new IndicadoresMini(partida.getCiudad());
 
-        setTitle("Alcalde Digital - Nivel " + numero);
+        setTitle("Alcalde Digital - Nivel " + numero + " - Turno de " + partida.getJugador().getNombre());
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setSize(1260, 760);
         setMinimumSize(new Dimension(1000, 620));
@@ -62,17 +55,12 @@ public class VentanaNivel extends JFrame {
         JPanel raiz = new JPanel(new BorderLayout());
         raiz.add(construirBarra(), BorderLayout.NORTH);
         raiz.add(juego, BorderLayout.CENTER);
-        raiz.add(construirLateral(), BorderLayout.EAST);
         setContentPane(raiz);
         Configuracion.instalarBrillo(this);
-
-        refresco = new Timer(300, e -> actualizarLateral());
-        actualizarLateral();
 
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowOpened(WindowEvent e) {
-                refresco.start();
                 juego.iniciar();
             }
 
@@ -113,6 +101,13 @@ public class VentanaNivel extends JFrame {
         pausa.setFocusable(false);
         pausa.addActionListener(e -> juego.setPausado(!juego.isPausado()));
 
+        // Botón del mapa: abre la red de Ciudad Nova, los indicadores y la salud de la ciudad
+        BotonImagen mapa = new BotonImagen("/alcaldedigital/recursos/mapa.png", "Ciudad", true);
+        mapa.setToolTipText("Ciudad Nova: red, indicadores y salud de la ciudad");
+        mapa.setFocusable(false);
+        mapa.setPreferredSize(new Dimension(42, mapa.altoParaAncho(42)));
+        mapa.addActionListener(e -> conJuegoPausado(() -> new DialogoCiudad(this, partida).mostrar()));
+
         BotonImagen ayuda = new BotonImagen("/alcaldedigital/recursos/ayuda.png", "Ayuda", true);
         ayuda.setToolTipText("Ayuda");
         ayuda.setFocusable(false);
@@ -128,67 +123,13 @@ public class VentanaNivel extends JFrame {
         JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         derecha.setOpaque(false);
         derecha.add(pausa);
+        derecha.add(mapa);
         derecha.add(ayuda);
         derecha.add(ajustes);
 
         barra.add(izquierda, BorderLayout.WEST);
         barra.add(derecha, BorderLayout.EAST);
         return barra;
-    }
-
-    private JPanel construirLateral() {
-        JPanel lateral = new FondoCafe(null);
-        lateral.setLayout(new BoxLayout(lateral, BoxLayout.Y_AXIS));
-        lateral.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 3, 0, 0, DialogoJuego.ORO),
-                BorderFactory.createEmptyBorder(14, 14, 14, 14)));
-        lateral.setPreferredSize(new Dimension(290, 10));
-
-        lateral.add(titulo("Red de Ciudad Nova"));
-        lateral.add(DialogoJuego.espacio(4));
-        JLabel explica = DialogoJuego.parrafo("Cada error hace avanzar el rumor un salto por la red (BFS). "
-                + "Cada publicación bien resuelta lo hace retroceder.", 255, 12, DialogoJuego.CREMA_SUAVE);
-        explica.setAlignmentX(0f);
-        lateral.add(explica);
-        lateral.add(DialogoJuego.espacio(6));
-        PanelRedCiudad red = new PanelRedCiudad(partida.getRed(), true);
-        red.setAlignmentX(0f);
-        red.setMaximumSize(new Dimension(Integer.MAX_VALUE, 190));
-        lateral.add(red);
-        lateral.add(DialogoJuego.espacio(6));
-        lblRumor.setFont(DialogoJuego.fuente(Font.BOLD, 14));
-        lblRumor.setAlignmentX(0f);
-        lateral.add(lblRumor);
-
-        lateral.add(DialogoJuego.espacio(16));
-        lateral.add(titulo("Indicadores"));
-        lateral.add(DialogoJuego.espacio(8));
-        indicadores.setAlignmentX(0f);
-        indicadores.setMaximumSize(new Dimension(Integer.MAX_VALUE, indicadores.getPreferredSize().height));
-        lateral.add(indicadores);
-
-        lateral.add(DialogoJuego.espacio(10));
-        lblFeed.setFont(DialogoJuego.fuente(Font.PLAIN, 12));
-        lblFeed.setForeground(DialogoJuego.CREMA_SUAVE);
-        lblFeed.setAlignmentX(0f);
-        lateral.add(lblFeed);
-        return lateral;
-    }
-
-    private static JLabel titulo(String texto) {
-        JLabel l = DialogoJuego.etiqueta(texto, Font.BOLD, 16, DialogoJuego.ORO);
-        l.setAlignmentX(0f);
-        return l;
-    }
-
-    private void actualizarLateral() {
-        int infectados = partida.getRed().cantidadInfectados();
-        int total = partida.getRed().nodos.size();
-        lblRumor.setText("Rumor en " + infectados + " de " + total + " lugares");
-        lblRumor.setForeground(infectados > total / 2 ? DialogoJuego.ROJO : DialogoJuego.CREMA);
-        lblFeed.setText("Feed (árbol AVL): " + partida.getFeed().getTamano() + " publicaciones · altura "
-                + partida.getFeed().getAlturaArbol());
-        indicadores.repaint();
     }
 
     // ------------------------------------------------------------------
@@ -212,31 +153,31 @@ public class VentanaNivel extends JFrame {
         }
         juego.setPausado(true);
         boolean salir = DialogoJuego.confirmar(this, "¿Abandonar el nivel?",
-                "Si sales ahora, el nivel cuenta como no superado y tendrás que repetirlo.",
-                "Volver al mapa", "Seguir jugando");
+                "Si sales ahora, tu ronda cuenta como no superada y le pasas el turno al siguiente.",
+                "Terminar mi turno", "Seguir jugando");
         if (salir) {
             juego.detener();
-            partida.terminarNivel(numero, false, 0, 0);
-            cerrar(new ArrayList<>(), false);
+            double segundos = juego.getSegundosJugados();
+            partida.registrarRonda(numero, false, 0, segundos);
+            cerrar(new ResultadoRonda(partida.getJugador(), false, 0, segundos, juego.getPuntosRonda(), 0));
         }
     }
 
     private void alTerminar(PanelPlataformas.ResultadoNivel r) {
-        List<Integer> desbloqueados = partida.terminarNivel(numero, r.gano, r.vidas, r.puntos);
-        actualizarLateral();
-        DialogoFinNivel.Opcion opcion = new DialogoFinNivel(this, partida, numero, r, desbloqueados).elegir();
-        cerrar(desbloqueados, opcion == DialogoFinNivel.Opcion.REINTENTAR);
+        int bono = partida.registrarRonda(numero, r.gano, r.vidas, r.segundos);
+        int puntos = r.puntos + bono + (r.gano ? r.vidas * 25 : 0);
+        new DialogoFinNivel(this, partida, numero, r, bono, puntos, textoContinuar).mostrar();
+        cerrar(new ResultadoRonda(partida.getJugador(), r.gano, r.vidas, r.segundos, puntos, bono));
     }
 
-    private void cerrar(List<Integer> desbloqueados, boolean reintentar) {
+    private void cerrar(ResultadoRonda resultado) {
         if (cerrado) {
             return;
         }
         cerrado = true;
-        refresco.stop();
         juego.detener();
         dispose();
-        alVolver.volver(desbloqueados, reintentar);
+        alVolver.volver(resultado);
     }
 
     /** Panel con el degradado café de las ventanas del juego. */

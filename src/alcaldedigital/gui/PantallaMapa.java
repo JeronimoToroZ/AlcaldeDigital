@@ -3,6 +3,8 @@ package alcaldedigital.gui;
 import alcaldedigital.estructuras.GrafoNiveles;
 import alcaldedigital.estructuras.NodoNivel;
 import alcaldedigital.logica.Partida;
+import alcaldedigital.logica.ResultadoRonda;
+import alcaldedigital.modelo.Jugador;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Cursor;
@@ -84,20 +86,57 @@ public class PantallaMapa extends JFrame {
         }
     }
 
+    /** Un nivel se juega por rondas: una por jugador, en el orden en que se registraron. */
     private void jugar(int numero) {
+        jugarRonda(numero, 0, new ArrayList<>());
+    }
+
+    private void jugarRonda(int numero, int ronda, List<ResultadoRonda> resultados) {
+        List<Jugador> jugadores = partida.getJugadores();
+        if (ronda >= jugadores.size()) {
+            terminarRondas(numero, resultados);
+            return;
+        }
+        partida.setTurno(ronda);
+        // panel que avisa a quién le toca, antes de cada ronda
+        new DialogoTurno(this, jugadores.get(ronda), numero, ronda + 1, jugadores.size()).mostrar();
         setVisible(false);
-        new VentanaNivel(partida, numero, (desbloqueados, reintentar) -> {
-            if (reintentar) {
-                jugar(numero);
-                return;
-            }
+        String textoContinuar = ronda + 1 < jugadores.size()
+                ? "Turno de " + jugadores.get(ronda + 1).getNombre()
+                : "Ver puntuaciones";
+        new VentanaNivel(partida, numero, textoContinuar, resultado -> {
+            resultados.add(resultado);
             setVisible(true);
-            panel.animarDesbloqueo(desbloqueados);
-            if (partida.eleccionDisponible() && !eleccionMostrada) {
-                eleccionMostrada = true;
-                SwingUtilities.invokeLater(this::mostrarEleccion);
-            }
+            SwingUtilities.invokeLater(() -> jugarRonda(numero, ronda + 1, resultados));
         }).setVisible(true);
+    }
+
+    /**
+     * Cuando todos jugaron: si AL MENOS UNO superó el nivel, se marca como ganado en
+     * el grafo (con las estrellas del mejor) y se desbloquea lo que sigue.
+     * Luego se muestra la tabla de puntuaciones con el podio.
+     */
+    private void terminarRondas(int numero, List<ResultadoRonda> resultados) {
+        int mejoresVidas = 0;
+        int mejorPuntaje = 0;
+        boolean alguienSupero = false;
+        for (ResultadoRonda r : resultados) {
+            if (r.supero) {
+                alguienSupero = true;
+                mejoresVidas = Math.max(mejoresVidas, r.vidas);
+                mejorPuntaje = Math.max(mejorPuntaje, r.puntos);
+            }
+        }
+        List<Integer> nuevos = alguienSupero
+                ? partida.completarNivel(numero, mejoresVidas, mejorPuntaje)
+                : new ArrayList<>();
+        setVisible(true);
+        new DialogoTablaPuntuaciones(this, numero, resultados, nuevos).mostrar();
+        panel.animarDesbloqueo(nuevos);
+        if (partida.eleccionDisponible() && !eleccionMostrada) {
+            eleccionMostrada = true;
+            SwingUtilities.invokeLater(this::mostrarEleccion);
+        }
     }
 
     private void mostrarEleccion() {
@@ -363,7 +402,8 @@ public class PantallaMapa extends JFrame {
         }
 
         private void dibujarCabecera(Graphics2D g2, boolean contraste) {
-            int x = 20, y = 16, ancho = 360, alto = 74;
+            List<Jugador> jugadores = partida.getJugadores();
+            int x = 20, y = 16, ancho = 380, alto = 66 + jugadores.size() * 19;
             g2.setPaint(contraste ? Color.BLACK : new GradientPaint(0, y, new Color(0x4A, 0x2C, 0x1E, 235),
                     0, y + alto, new Color(0x26, 0x15, 0x0E, 235)));
             g2.fillRoundRect(x, y, ancho, alto, 20, 20);
@@ -378,8 +418,19 @@ public class PantallaMapa extends JFrame {
             for (NodoNivel n : partida.getNiveles().getNodos()) {
                 if (n.isCompletado()) ganados++;
             }
-            g2.drawString(partida.getJugador().getNombre() + "  ·  " + partida.getJugador().getPuntos() + " pts  ·  "
-                    + ganados + "/" + partida.getNiveles().cantidadVertices() + " niveles", x + 18, y + 56);
+            g2.drawString(ganados + " de " + partida.getNiveles().cantidadVertices() + " niveles ganados",
+                    x + 18, y + 54);
+            g2.setFont(new Font(DialogoJuego.FUENTE, Font.PLAIN, 13));
+            for (int i = 0; i < jugadores.size(); i++) {
+                Jugador j = jugadores.get(i);
+                int ly = y + 76 + i * 19;
+                g2.setColor(contraste ? new Color(255, 255, 0) : DialogoJuego.ORO);
+                g2.fillOval(x + 20, ly - 9, 7, 7);
+                g2.setColor(contraste ? Color.WHITE : DialogoJuego.CREMA);
+                g2.drawString(j.getNombre() + " (" + j.getRol().getEtiqueta() + ")", x + 34, ly);
+                String pts = j.getPuntos() + " pts";
+                g2.drawString(pts, x + ancho - 18 - g2.getFontMetrics().stringWidth(pts), ly);
+            }
         }
 
         private void dibujarInfo(Graphics2D g2, NodoNivel n, GrafoNiveles grafo, double r, int w, int h) {

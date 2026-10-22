@@ -66,17 +66,23 @@ public class DialogoInstrucciones extends DialogoJuego {
 
     /** Instrucciones cortas que aparecen la primera vez que se abre el mapa. */
     public static void instruccionesIniciales(Window padre) {
-        DialogoInstrucciones d = new DialogoInstrucciones(padre, "Instrucciones", "¡Bienvenido a Alcalde Digital!");
+        DialogoInstrucciones d = new DialogoInstrucciones(padre, "Instrucciones", "¡Bienvenidos a Alcalde Digital!");
         d.pasos(new String[]{
-            "En el mapa, haz clic en el nivel 1. Al ganar un nivel se abren los dos que salen de él.",
-            "Arriba verás una publicación de Civitas. Decide qué harías con ella.",
-            "Muévete con ← → y salta con Espacio. Recolecta SOLO las burbujas de esa decisión.",
-            "Una burbuja equivocada, caer en un hueco o quedarte sin tiempo te quita una vida (tienes 3).",
-            "Resuelve 4 publicaciones para ganar el nivel."
+            "Elijan un nivel en el mapa (empiecen por el 1). Ese nivel lo juegan TODOS, uno por uno: "
+                    + "antes de cada ronda aparece un aviso con el jugador al que le toca.",
+            "Arriba sale una publicación de Civitas. Piensa qué harías con ella: compartir, verificar, "
+                    + "ignorar o reportar.",
+            "Muévete con ← → y salta con Espacio. Recolecta " + alcaldedigital.logica.DificultadNivel.BURBUJAS_REQUERIDAS
+                    + " burbujas de esa decisión por publicación. "
+                    + "Ojo: las burbujas cambian de lugar cada 2 segundos (y más rápido en cada nivel).",
+            "Burbuja equivocada, caer en un hueco o quedarte sin tiempo te quita una vida. Tienes 3 por ronda.",
+            "Resuelve las 4 publicaciones. Un cronómetro mide tu ronda: entre menos tardes, más puntos.",
+            "Cuando todos jueguen, sale la tabla de puntuaciones con el podio. Si al menos uno superó el "
+                    + "nivel, se desbloquean los dos niveles que salen de él."
         });
         d.simbolos();
-        d.cierre("Cada decisión cambia la ciudad: los errores esparcen rumores por Ciudad Nova.");
-        d.finalizar(false);
+        d.cierre("Todos juegan sobre la misma ciudad: los errores de uno esparcen rumores para todos.");
+        d.finalizar(true);
     }
 
     /** Sección AYUDA completa, disponible desde el mapa y desde cada nivel. */
@@ -84,33 +90,55 @@ public class DialogoInstrucciones extends DialogoJuego {
         DialogoInstrucciones d = new DialogoInstrucciones(padre, "Ayuda", "Todo lo que necesitas para jugar");
         d.seccion("Objetivo del juego",
                 "Ciudad Nova está en elecciones y en Civitas circulan rumores, opiniones y noticias falsas. "
-                + "Tu misión es tomar decisiones responsables para que la ciudad llegue al día de elecciones "
-                + "informada, con confianza y sin conflictos.");
+                + "Cada jugador debe tomar decisiones responsables para que la ciudad llegue al día de "
+                + "elecciones informada, con confianza y sin conflictos, y así ganar más votos que los demás.");
+        d.seccion("Turnos",
+                "• Cada nivel se juega por rondas: una por jugador, en el orden en que se registraron.\n"
+                + "• Antes de cada ronda aparece un aviso con el nombre y el rol del jugador de turno.\n"
+                + "• Mientras uno juega, los demás miran: todos comparten la misma ciudad y la misma red.");
         d.seccion("Controles",
                 "← / A: izquierda    → / D: derecha    Espacio / ↑ / W: saltar (mantén para saltar más alto)    "
-                + "P o Esc: pausa.");
-        d.seccion("Reglas de cada nivel",
+                + "P o Esc: pausa (el cronómetro se detiene).");
+        d.seccion("Reglas de cada ronda",
                 "• Arriba aparece una publicación. Recolecta solo las burbujas de la acción correcta.\n"
-                + "• Cada nivel pide más burbujas correctas por publicación (nivel 1: 3, nivel 7: 9).\n"
-                + "• Burbuja equivocada, caer en un hueco o tiempo agotado = pierdes una vida. Tienes 3.\n"
-                + "• Resuelve 4 publicaciones para ganar. Las vidas que te queden son tus estrellas.\n"
-                + "• Desde el nivel 3 las burbujas se mueven, desde el 4 hay plataformas móviles "
-                + "y desde el 5 los símbolos cambian solos (parpadean justo antes).");
+                + "• Necesitas " + alcaldedigital.logica.DificultadNivel.BURBUJAS_REQUERIDAS
+                + " burbujas correctas por publicación y son 4 publicaciones.\n"
+                + "• Las burbujas se generan en otro lugar cada 2 s en el nivel 1, y 0,1 s más rápido "
+                + "en cada nivel (1,4 s en el nivel 7). Justo antes de moverse se desvanecen.\n"
+                + "• Burbuja equivocada, caer en un hueco o tiempo agotado = pierdes una vida. Tienes 3.");
+        d.seccion("Puntuación",
+                "• Cada burbuja correcta: +10. Cada publicación resuelta: los puntos del árbol de decisión.\n"
+                + "• Si superas el nivel: +25 por cada vida que te quede y un bono por velocidad "
+                + "(3 puntos por cada segundo por debajo de " + alcaldedigital.logica.Partida.SEGUNDOS_REFERENCIA
+                + " s). Entre menos tardes, más puntos.\n"
+                + "• Al final de las rondas, la tabla muestra a cada jugador con su tiempo y sus puntos, "
+                + "y el podio con el 1.º, 2.º y 3.º lugar.");
         d.simbolos();
+        StringBuilder roles = new StringBuilder();
+        for (alcaldedigital.modelo.Rol r : alcaldedigital.modelo.Rol.values()) {
+            roles.append("• ").append(r.getEtiqueta()).append(": ").append(r.getDescripcion()).append("\n");
+        }
+        roles.append("Los roles no se repiten: cada jugador tiene uno distinto.");
+        d.seccion("Roles", roles.toString());
         d.seccion("Mapa de niveles",
                 "Los niveles forman un grafo: el 1 abre el 2 y el 3; el 2 abre el 4 y el 5; el 3 abre el 6 y el 7. "
-                + "Un nivel gris con candado sigue bloqueado. El que brilla está disponible. "
-                + "Los ganados tienen anillo dorado y estrellas.");
+                + "Un nivel se desbloquea cuando al menos un jugador supera el nivel anterior. "
+                + "Gris con candado = bloqueado; brilla = disponible; anillo dorado y estrellas = ganado.");
         d.seccion("Cómo ganar",
-                "Al ganar un nivel final (4, 5, 6 o 7) se abren las elecciones. Tus votos dependen en un 60% "
-                + "de la salud de la ciudad y en un 40% de tu reputación. Con 50% o más eres el nuevo alcalde.");
+                "Al superar un nivel final (4, 5, 6 o 7) se abren las elecciones. Los votos se reparten según "
+                + "los puntos y la reputación de cada jugador, y pesan más si la ciudad quedó sana. "
+                + "Quien tenga más votos es el nuevo alcalde.");
         d.seccion("Indicadores de la ciudad",
                 "Información verificada, Confianza, Convivencia y Bienestar digital: conviene que suban.\n"
                 + "▼ Desinformación y ▼ Conflictos: conviene que bajen.\n"
-                + "La red de la ciudad (panel derecho del nivel) muestra en rojo los lugares a los que llegó el rumor.");
+                + "La red de la ciudad (botón del mapa, dentro del nivel) muestra en rojo los lugares a los que llegó el rumor.");
         d.seccion("Botones",
-                "? Ayuda: esta ventana.   ⚙ Ajustes: modo normal o alto contraste, brillo y sonido.   "
-                + "Pausa: detiene el nivel.   Ciudad y estructuras: indicadores, bitácora, grafos y árboles del juego.");
+                "• Botón con signo de interrogación (Ayuda): esta ventana.\n"
+                + "• Botón del engranaje (Ajustes): modo normal o alto contraste, brillo y sonido.\n"
+                + "• Botón del mapa (dentro del nivel): red de Ciudad Nova, indicadores y salud de la ciudad. "
+                + "El juego se pausa mientras está abierto.\n"
+                + "• Pausa: detiene el nivel y el cronómetro.\n"
+                + "• Ciudad y estructuras (en el mapa de niveles): bitácora, grafos y árboles del juego.");
         d.finalizar(true);
     }
 

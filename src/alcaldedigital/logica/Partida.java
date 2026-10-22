@@ -15,7 +15,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Motor de la campaña (un solo jugador). Es el único punto donde se conectan
+ * Motor de la campaña (de 1 a 4 jugadores por turnos). Es el único punto donde se conectan
  * las estructuras de datos con las reglas del juego:
  *
  *   GrafoNiveles  -> qué niveles se pueden jugar (ganar uno desbloquea su subárbol).
@@ -27,7 +27,8 @@ import java.util.List;
  */
 public class Partida {
 
-    private final Jugador jugador;
+    private final List<Jugador> jugadores;
+    private int indiceTurno;
     private final EstadoCiudad ciudad;
     private final ArbolAVL feed;
     private final ArbolDecision arbolDecision;
@@ -38,8 +39,28 @@ public class Partida {
     private final List<String> textosUsados = new ArrayList<>();
     private int siguienteId = 1;
 
+    /** Partida de un solo jugador (útil para pruebas). */
     public Partida(Jugador jugador) {
-        this.jugador = jugador;
+        this(Collections.singletonList(jugador));
+    }
+
+    /**
+     * Partida por turnos: todos los jugadores juegan cada nivel, uno tras otro,
+     * sobre la MISMA ciudad (sus decisiones suman o restan para todos).
+     * Los roles no se pueden repetir.
+     */
+    public Partida(List<Jugador> jugadores) {
+        if (jugadores == null || jugadores.isEmpty() || jugadores.size() > 4) {
+            throw new IllegalArgumentException("La partida admite de 1 a 4 jugadores.");
+        }
+        for (int i = 0; i < jugadores.size(); i++) {
+            for (int k = i + 1; k < jugadores.size(); k++) {
+                if (jugadores.get(i).getRol() == jugadores.get(k).getRol()) {
+                    throw new IllegalArgumentException("Los roles no se pueden repetir.");
+                }
+            }
+        }
+        this.jugadores = new ArrayList<>(jugadores);
         this.ciudad = new EstadoCiudad();
         this.feed = new ArbolAVL();
         this.arbolDecision = new ArbolDecision();
@@ -47,8 +68,34 @@ public class Partida {
         this.niveles = GrafoNiveles.crearCampana();
         this.red = new GrafoSocial();
         this.red.inicializarMapaPrueba();
-        bitacora.add("Arranca la campana electoral en Ciudad Nova. " + jugador.getNombre()
-                + " entra a Civitas con " + niveles.cantidadVertices() + " niveles por delante.");
+        StringBuilder nombres = new StringBuilder();
+        for (Jugador j : this.jugadores) {
+            nombres.append(nombres.length() == 0 ? "" : ", ").append(j.getNombre())
+                   .append(" (").append(j.getRol().getEtiqueta()).append(")");
+        }
+        bitacora.add("Arranca la campana electoral en Ciudad Nova. Juegan: " + nombres
+                + ". Hay " + niveles.cantidadVertices() + " niveles por delante.");
+    }
+
+    // ------------------------------------------------------------------
+    // Turnos
+    // ------------------------------------------------------------------
+
+    /** Indica a quién le toca jugar (0 = primer jugador). */
+    public void setTurno(int indice) {
+        if (indice < 0 || indice >= jugadores.size()) {
+            throw new IllegalArgumentException("Turno fuera de rango: " + indice);
+        }
+        indiceTurno = indice;
+    }
+
+    /** El jugador al que le toca: sus decisiones usan los multiplicadores de SU rol. */
+    public Jugador getJugador() {
+        return jugadores.get(indiceTurno);
+    }
+
+    public List<Jugador> getJugadores() {
+        return Collections.unmodifiableList(jugadores);
     }
 
     // ------------------------------------------------------------------
@@ -132,6 +179,7 @@ public class Partida {
         boolean correcta = (accion == accionCorrecta(p));
 
         Efecto efecto = arbolDecision.resolver(accion, p.getTipo());
+        Jugador jugador = getJugador();
         efecto.aplicarSobre(ciudad, jugador.getRol(), fueVerificacion);
         int puntos = efecto.puntosPara(jugador.getRol(), fueVerificacion);
         int reputacion = efecto.reputacionPara(jugador.getRol());
@@ -156,7 +204,7 @@ public class Partida {
         }
 
         String ruta = arbolDecision.rutaDe(accion, p.getTipo());
-        bitacora.add((correcta ? "ACIERTO " : "ERROR ") + accion.getEtiqueta() + " -> \"" + recortar(p.getTexto())
+        bitacora.add(jugador.getNombre() + ": " + (correcta ? "ACIERTO " : "ERROR ") + accion.getEtiqueta() + " -> \"" + recortar(p.getTexto())
                 + "\" | " + efecto.getMensaje() + " (" + (puntos >= 0 ? "+" : "") + puntos + " pts)"
                 + (contagiados.isEmpty() ? "" : " El rumor llego a " + nombres(contagiados) + ".")
                 + (limpiados.isEmpty() ? "" : " Se limpio " + nombres(limpiados) + "."));
@@ -177,7 +225,7 @@ public class Partida {
 
     /** Puntos por cada burbuja correcta recolectada (no cuenta como acierto de decisión). */
     public void sumarBurbuja(int puntos) {
-        jugador.sumarBonus(puntos);
+        getJugador().sumarBonus(puntos);
     }
 
     /** Evento aleatorio entre publicaciones (requisito de componente aleatorio). */
@@ -191,20 +239,42 @@ public class Partida {
     // Fin de nivel y de campaña
     // ------------------------------------------------------------------
 
+    /** Segundos de referencia: terminar antes de esto da puntos extra (3 por segundo ahorrado). */
+    public static final int SEGUNDOS_REFERENCIA = 240;
+
+    /** Puntos extra por velocidad: entre menos tiempo tarde el jugador, más puntos. */
+    public static int bonoPorTiempo(double segundos) {
+        return (int) Math.max(0, Math.round((SEGUNDOS_REFERENCIA - segundos) * 3));
+    }
+
     /**
-     * Registra el resultado del nivel. Si ganó, lo marca en el grafo y devuelve
-     * los niveles que se acaban de desbloquear.
+     * Cierra la ronda del jugador de turno en un nivel. Si lo superó, recibe
+     * 25 puntos por cada vida que le quedó y el bono por tiempo.
+     * Devuelve el bono por tiempo (0 si no lo superó).
      */
-    public List<Integer> terminarNivel(int numero, boolean gano, int vidasRestantes, int puntosNivel) {
+    public int registrarRonda(int numero, boolean gano, int vidasRestantes, double segundos) {
+        Jugador j = getJugador();
         if (!gano) {
-            bitacora.add("NIVEL " + numero + " perdido. El rumor quedo en " + red.cantidadInfectados()
-                    + " lugares de la ciudad.");
-            return new ArrayList<>();
+            bitacora.add("NIVEL " + numero + ": " + j.getNombre() + " no lo supero ("
+                    + String.format("%.1f", segundos) + " s). El rumor quedo en "
+                    + red.cantidadInfectados() + " lugares.");
+            return 0;
         }
-        int estrellas = Math.max(1, vidasRestantes);   // 3 vidas = 3 estrellas
-        jugador.sumarBonus(vidasRestantes * 25);
-        List<Integer> nuevos = niveles.completar(numero, estrellas, puntosNivel);
-        bitacora.add("NIVEL " + numero + " superado con " + estrellas + " estrella(s). "
+        int bono = bonoPorTiempo(segundos);
+        j.sumarBonus(vidasRestantes * 25 + bono);
+        bitacora.add("NIVEL " + numero + ": " + j.getNombre() + " lo supero en "
+                + String.format("%.1f", segundos) + " s con " + vidasRestantes + " vida(s). Bono por tiempo: +"
+                + bono + ".");
+        return bono;
+    }
+
+    /**
+     * Cuando todos jugaron el nivel y AL MENOS UNO lo superó, se marca como ganado
+     * en el grafo. Devuelve los niveles que se acaban de desbloquear.
+     */
+    public List<Integer> completarNivel(int numero, int estrellas, int mejorPuntaje) {
+        List<Integer> nuevos = niveles.completar(numero, Math.max(1, Math.min(3, estrellas)), mejorPuntaje);
+        bitacora.add("NIVEL " + numero + " superado por el equipo. "
                 + (nuevos.isEmpty() ? "" : "Se desbloquean: " + nuevos + "."));
         return nuevos;
     }
@@ -220,12 +290,39 @@ public class Partida {
     }
 
     /**
-     * Porcentaje de votos del jugador en la elección: depende de cómo dejó la ciudad
-     * (salud global) y de su reputación. Así las decisiones definen el resultado final.
+     * Peso electoral de un jugador: sus puntos más el doble de su reputación,
+     * escalado por la salud de la ciudad (una ciudad sana cree más en sus líderes).
      */
-    public int porcentajeVotos() {
-        double v = ciudad.saludGlobal() * 0.6 + jugador.getReputacion() * 0.4;
-        return (int) Math.max(5, Math.min(95, Math.round(v)));
+    private double valorElectoral(Jugador j) {
+        double base = Math.max(1, j.getPuntos() + j.getReputacion() * 2);
+        return base * (0.5 + ciudad.saludGlobal() / 200.0);
+    }
+
+    /** El alcalde electo es el jugador con mayor peso electoral. */
+    public Jugador alcaldeElecto() {
+        Jugador mejor = jugadores.get(0);
+        for (Jugador j : jugadores) {
+            if (valorElectoral(j) > valorElectoral(mejor)) {
+                mejor = j;
+            }
+        }
+        return mejor;
+    }
+
+    /**
+     * Porcentaje de votos de un jugador. Con varios jugadores se reparten según
+     * su peso electoral; con uno solo, depende de la salud de la ciudad y su reputación.
+     */
+    public int porcentajeVotos(Jugador j) {
+        if (jugadores.size() == 1) {
+            double v = ciudad.saludGlobal() * 0.6 + j.getReputacion() * 0.4;
+            return (int) Math.max(5, Math.min(95, Math.round(v)));
+        }
+        double total = 0;
+        for (Jugador otro : jugadores) {
+            total += valorElectoral(otro);
+        }
+        return (int) Math.round(valorElectoral(j) * 100 / total);
     }
 
     /** Retorna el veredicto final de la ciudad en funcion de su salud global. */
@@ -244,7 +341,6 @@ public class Partida {
     // Accesores para la GUI
     // ------------------------------------------------------------------
 
-    public Jugador getJugador() { return jugador; }
     public EstadoCiudad getCiudad() { return ciudad; }
     public ArbolAVL getFeed() { return feed; }
     public ArbolDecision getArbolDecision() { return arbolDecision; }

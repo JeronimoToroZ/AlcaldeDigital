@@ -14,6 +14,8 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.Window;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.BoxLayout;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -32,24 +34,30 @@ public class DialogoEleccion extends DialogoJuego {
 
     public DialogoEleccion(Window padre, Partida partida) {
         super(padre, "¡Día de elecciones!");
-        Jugador j = partida.getJugador();
-        int votos = partida.porcentajeVotos();
-        boolean gano = votos >= 50;
+        List<Jugador> jugadores = new ArrayList<>(partida.getJugadores());
+        jugadores.sort((x, y) -> Integer.compare(partida.porcentajeVotos(y), partida.porcentajeVotos(x)));
+        Jugador electo = partida.alcaldeElecto();
+        boolean individual = jugadores.size() == 1;
+        boolean gano = !individual || partida.porcentajeVotos(electo) >= 50;
 
         JPanel cuerpo = new JPanel();
         cuerpo.setOpaque(false);
         cuerpo.setLayout(new BoxLayout(cuerpo, BoxLayout.Y_AXIS));
 
-        JLabel lblRes = etiqueta(gano ? j.getNombre() + " es el nuevo alcalde de Ciudad Nova"
-                : "Esta vez no alcanzó para ganar la alcaldía", Font.BOLD, 20, gano ? VERDE : ROJO);
+        JLabel lblRes = etiqueta(gano ? electo.getNombre() + " es el nuevo alcalde de Ciudad Nova"
+                : "Esta vez no alcanzó para ganar la alcaldía", Font.BOLD, 22, gano ? VERDE : ROJO);
         lblRes.setAlignmentX(0.5f);
         cuerpo.add(lblRes);
         cuerpo.add(espacio(10));
 
-        BarraVotos barra = new BarraVotos(votos);
-        barra.setAlignmentX(0.5f);
-        cuerpo.add(barra);
-        cuerpo.add(espacio(10));
+        // una barra de votos por jugador, de más a menos votos
+        for (Jugador j : jugadores) {
+            BarraVotos barra = new BarraVotos(j.getNombre() + " (" + j.getRol().getEtiqueta() + ")",
+                    partida.porcentajeVotos(j), j == electo && gano, individual);
+            barra.setAlignmentX(0.5f);
+            cuerpo.add(barra);
+        }
+        cuerpo.add(espacio(8));
 
         JLabel veredicto = parrafo(partida.veredicto(), 520, 15, CREMA);
         veredicto.setHorizontalAlignment(SwingConstants.CENTER);
@@ -64,14 +72,21 @@ public class DialogoEleccion extends DialogoJuego {
         ciudad.add(new IndicadoresMini(partida.getCiudad()), BorderLayout.CENTER);
         fila.add(ciudad);
 
-        Tarjeta tu = new Tarjeta(new GridLayout(0, 1, 0, 6));
-        tu.add(etiqueta("Tu campaña", Font.BOLD, 15, ORO));
-        tu.add(etiqueta("Puntos: " + j.getPuntos(), Font.PLAIN, 15, CREMA));
-        tu.add(etiqueta("Reputación: " + j.getReputacion() + " / 100", Font.PLAIN, 15, CREMA));
-        tu.add(etiqueta("Decisiones acertadas: " + j.getAciertos(), Font.PLAIN, 15, CREMA));
-        tu.add(etiqueta("Decisiones erradas: " + j.getErrores(), Font.PLAIN, 15, CREMA));
-        tu.add(parrafo("Votos = 60% salud de la ciudad + 40% tu reputación.", 200, 12, CREMA_SUAVE));
-        fila.add(tu);
+        Tarjeta campanas = new Tarjeta(null);
+        campanas.setLayout(new BoxLayout(campanas, BoxLayout.Y_AXIS));
+        campanas.add(etiqueta("Campañas", Font.BOLD, 15, ORO));
+        campanas.add(espacio(8));
+        for (Jugador j : jugadores) {
+            campanas.add(etiqueta(j.getNombre() + ": " + j.getPuntos() + " pts · rep " + j.getReputacion(),
+                    Font.PLAIN, 14, CREMA));
+            campanas.add(espacio(4));
+        }
+        campanas.add(espacio(6));
+        campanas.add(parrafo(individual
+                ? "Votos = 60% salud de la ciudad + 40% tu reputación."
+                : "Los votos se reparten según los puntos y la reputación de cada uno, "
+                  + "y pesan más si la ciudad quedó sana.", 230, 12, CREMA_SUAVE));
+        fila.add(campanas);
         fila.setAlignmentX(0.5f);
         cuerpo.add(fila);
 
@@ -91,15 +106,21 @@ public class DialogoEleccion extends DialogoJuego {
         return opcion;
     }
 
-    /** Barra horizontal con el porcentaje de votos y la meta del 50%. */
+    /** Barra horizontal con el nombre, el porcentaje de votos y (si juega uno solo) la meta del 50 %. */
     private static class BarraVotos extends JComponent {
 
+        private final String nombre;
         private final int votos;
+        private final boolean destacado;
+        private final boolean conMeta;
 
-        BarraVotos(int votos) {
+        BarraVotos(String nombre, int votos, boolean destacado, boolean conMeta) {
+            this.nombre = nombre;
             this.votos = votos;
-            setPreferredSize(new Dimension(480, 64));
-            setMaximumSize(new Dimension(480, 64));
+            this.destacado = destacado;
+            this.conMeta = conMeta;
+            setPreferredSize(new Dimension(520, 52));
+            setMaximumSize(new Dimension(520, 52));
         }
 
         @Override
@@ -107,27 +128,26 @@ public class DialogoEleccion extends DialogoJuego {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            int w = getWidth(), y = 26, alto = 24;
+            int w = getWidth(), y = 24, alto = 18;
+            g2.setFont(fuente(destacado ? Font.BOLD : Font.PLAIN, 15));
+            g2.setColor(destacado ? ORO : CREMA);
+            g2.drawString(nombre, 0, 17);
+            String s = votos + "%";
+            FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(s, w - fm.stringWidth(s), 17);
             g2.setColor(new Color(0, 0, 0, 80));
             g2.fillRoundRect(0, y, w, alto, alto, alto);
-            Color a = votos >= 50 ? new Color(0xB8, 0xEB, 0xBF) : new Color(0xF7, 0xC2, 0xBC);
-            Color b = votos >= 50 ? new Color(0x4C, 0xAF, 0x6A) : new Color(0xD3, 0x3A, 0x2F);
+            Color a = destacado ? new Color(0xFF, 0xE7, 0xA8) : new Color(0xE6, 0xD6, 0xBE);
+            Color b = destacado ? new Color(0xC9, 0x8E, 0x2B) : new Color(0x8A, 0x6E, 0x58);
             g2.setPaint(new GradientPaint(0, y, a, 0, y + alto, b));
-            g2.fillRoundRect(0, y, w * votos / 100, alto, alto, alto);
+            g2.fillRoundRect(0, y, Math.max(alto, w * votos / 100), alto, alto, alto);
             g2.setColor(ORO);
-            g2.setStroke(new BasicStroke(2f));
+            g2.setStroke(new BasicStroke(1.5f));
             g2.drawRoundRect(0, y, w - 1, alto, alto, alto);
-            // meta del 50 %
-            g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f, new float[]{4, 4}, 0));
-            g2.drawLine(w / 2, y - 4, w / 2, y + alto + 4);
-            g2.setFont(fuente(Font.BOLD, 20));
-            String s = votos + "% de los votos";
-            FontMetrics fm = g2.getFontMetrics();
-            g2.setColor(CREMA);
-            g2.drawString(s, (w - fm.stringWidth(s)) / 2, 19);
-            g2.setFont(fuente(Font.PLAIN, 11));
-            g2.setColor(CREMA_SUAVE);
-            g2.drawString("meta 50%", w / 2 + 6, y + alto + 14);
+            if (conMeta) {
+                g2.setStroke(new BasicStroke(2f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f, new float[]{4, 4}, 0));
+                g2.drawLine(w / 2, y - 3, w / 2, y + alto + 3);
+            }
             g2.dispose();
         }
     }

@@ -42,9 +42,15 @@ public class IndicadoresMini extends JComponent {
         FontMetrics fm = g2.getFontMetrics();
         for (int i = 0; i < 6; i++) {
             boolean malo = i >= 4;
-            String nombre = (malo ? "▼ " : "") + NOMBRES[i];
             g2.setColor(contraste ? Color.WHITE : DialogoJuego.CREMA);
-            g2.drawString(nombre, 0, y + fm.getAscent());
+            int tx = 0;
+            if (malo) {
+                // triángulo hacia abajo dibujado (no depende de que la fuente tenga el símbolo)
+                int ty = y + fm.getAscent() / 2;
+                g2.fillPolygon(new int[]{0, 9, 4}, new int[]{ty - 2, ty - 2, ty + 5}, 3);
+                tx = 14;
+            }
+            g2.drawString(NOMBRES[i], tx, y + fm.getAscent());
             String v = String.valueOf(valores[i]);
             g2.drawString(v, w - fm.stringWidth(v), y + fm.getAscent());
             int by = y + fm.getHeight() + 2;

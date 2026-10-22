@@ -90,28 +90,87 @@ public class Mundo {
         }
     }
 
+    /**
+     * Lugares POSIBLES para una burbuja (muchos, cada ~50 px). En cada momento solo
+     * se usan unos pocos, elegidos al azar y separados entre sí (ver elegirPosiciones).
+     */
     private void generarPuntosBurbuja(Random azar) {
-        // sobre el suelo, cada ~260 px (sin caer encima de un hueco); hay que saltar las equivocadas
-        for (double x = 320; x < ancho - 80; x += 220 + azar.nextInt(90)) {
+        // sobre el suelo (sin caer encima de un hueco); hay que saltar las equivocadas
+        for (double x = 280; x < ancho - 80; x += 50) {
             if (!sobreHueco(x)) {
-                puntosBurbuja.add(new double[]{x, SUELO_Y - 38});
+                puntosBurbuja.add(new double[]{x, SUELO_Y - 40});
             }
         }
+        // en el aire sobre el suelo: se agarran saltando
+        for (double x = 330; x < ancho - 80; x += 150) {
+            puntosBurbuja.add(new double[]{x, SUELO_Y - 115});
+        }
         for (Plataforma p : plataformas) {
-            if (p.tipo == Plataforma.Tipo.SUELO) {
-                continue;
+            if (p.tipo != Plataforma.Tipo.FLOTANTE) {
+                continue;   // en el suelo ya hay puntos y las móviles cambian de sitio
             }
-            puntosBurbuja.add(new double[]{p.x + p.ancho / 2, p.y - 38});
-            if (p.tipo == Plataforma.Tipo.FLOTANTE && azar.nextBoolean()) {
-                // en el aire, por fuera del borde: se alcanza saltando desde la plataforma
-                // (no queda encima de la otra burbuja, así no obliga a tocarla al caer)
-                double lado = azar.nextBoolean() ? p.derecha() + 45 : p.x - 45;
-                puntosBurbuja.add(new double[]{lado, p.y - 75});
+            for (double x = p.x + 25; x < p.derecha() - 20; x += 50) {
+                puntosBurbuja.add(new double[]{x, p.y - 40});
             }
+            // a los lados de la plataforma, en el aire
+            puntosBurbuja.add(new double[]{p.derecha() + 45, p.y - 75});
+            puntosBurbuja.add(new double[]{p.x - 45, p.y - 75});
         }
         // sobre los huecos: arriesgado, se agarran en pleno salto
         for (double[] h : huecos) {
             puntosBurbuja.add(new double[]{(h[0] + h[1]) / 2, SUELO_Y - 105});
+        }
+    }
+
+    /** Radio alrededor del jugador donde cae la mayoría de las burbujas (más o menos lo que se ve en pantalla). */
+    private static final double RADIO_CERCANO = 750;
+
+    /**
+     * Elige al azar "cantidad" lugares que estén a "distanciaMin" o más entre sí y
+     * lejos del jugador (para que una burbuja no aparezca encima de él).
+     * Dos tercios se buscan cerca del jugador (para que siempre tenga burbujas a la
+     * vista) y el resto en cualquier parte del mapa.
+     * Si no caben todas con esa separación, devuelve las que sí caben.
+     */
+    public List<double[]> elegirPosiciones(int cantidad, double distanciaMin, double xJugador, double yJugador,
+                                           Random azar) {
+        List<double[]> cercanos = new ArrayList<>();
+        List<double[]> todos = new ArrayList<>(puntosBurbuja);
+        for (double[] c : puntosBurbuja) {
+            if (Math.abs(c[0] - xJugador) <= RADIO_CERCANO) {
+                cercanos.add(c);
+            }
+        }
+        java.util.Collections.shuffle(cercanos, azar);
+        java.util.Collections.shuffle(todos, azar);
+        List<double[]> elegidas = new ArrayList<>();
+        agregarSeparadas(cercanos, elegidas, (int) Math.ceil(cantidad * 2 / 3.0), distanciaMin, xJugador, yJugador);
+        agregarSeparadas(todos, elegidas, cantidad, distanciaMin, xJugador, yJugador);
+        return elegidas;
+    }
+
+    private static void agregarSeparadas(List<double[]> candidatos, List<double[]> elegidas, int hasta,
+                                         double distanciaMin, double xJugador, double yJugador) {
+        double min2 = distanciaMin * distanciaMin;
+        for (double[] c : candidatos) {
+            if (elegidas.size() >= hasta) {
+                break;
+            }
+            double dxj = c[0] - xJugador, dyj = c[1] - yJugador;
+            if (dxj * dxj + dyj * dyj < 130 * 130) {
+                continue;
+            }
+            boolean lejos = true;
+            for (double[] e : elegidas) {
+                double dx = c[0] - e[0], dy = c[1] - e[1];
+                if (dx * dx + dy * dy < min2) {
+                    lejos = false;
+                    break;
+                }
+            }
+            if (lejos) {
+                elegidas.add(c);
+            }
         }
     }
 
