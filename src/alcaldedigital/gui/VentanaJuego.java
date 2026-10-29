@@ -52,8 +52,6 @@ public class VentanaJuego extends JFrame {
     private JPanel panelLienzoGrafo;
     private Timer timerPropagacionGrafo;
 
-    private final Map<String, List<String>> grafoCiudadZonas = new HashMap<>();
-
     private final JLabel lblTitulo = new JLabel("ALCALDE DIGITAL");
     private final JLabel lblTurno = new JLabel();
     private final JLabel lblTiempo = new JLabel();
@@ -84,7 +82,6 @@ public class VentanaJuego extends JFrame {
         this.panelArbol = new PanelArbolAVL(partida.getFeed());
 
         inicializarBancosTextos();
-        inicializarGrafoCiudadZonas();
 
         ordenTurnosPartida.add(Accion.IGNORAR);
         ordenTurnosPartida.add(Accion.REPORTAR);
@@ -143,15 +140,6 @@ public class VentanaJuego extends JFrame {
         });
     }
 
-    private void inicializarGrafoCiudadZonas() {
-        grafoCiudadZonas.put("Alcaldía", java.util.Arrays.asList("Plaza Central", "Barrio Norte"));
-        grafoCiudadZonas.put("Plaza Central", java.util.Arrays.asList("Alcaldía", "Parque Municipal", "Barrio Sur"));
-        grafoCiudadZonas.put("Parque Municipal", java.util.Arrays.asList("Plaza Central", "Colegio"));
-        grafoCiudadZonas.put("Colegio", java.util.Arrays.asList("Parque Municipal", "Barrio Norte"));
-        grafoCiudadZonas.put("Barrio Norte", java.util.Arrays.asList("Alcaldía", "Colegio"));
-        grafoCiudadZonas.put("Barrio Sur", java.util.Arrays.asList("Plaza Central"));
-    }
-
     private void inicializarBancosTextos() {
         textosIgnorar.add("Creo que debería perder el candidato Perez.");
         textosIgnorar.add("Para mí, la mejor propuesta es la de la candidata Ramirez.");
@@ -178,25 +166,24 @@ public class VentanaJuego extends JFrame {
         textosCompartir.add("Reporte de última hora: Las vías principales del centro estarán despejadas y con paso libre para facilitar la movilidad electoral. ¡Compártanlo en sus grupos!");
     }
 
+    /**
+     * Avanza la desinformacion UNA oleada de BFS: contagia a todos los vecinos
+     * sanos de los nodos ya infectados. El trabajo de grafo lo hace GrafoSocial;
+     * aqui solo se dispara y se repinta.
+     */
     private void propagarInfeccionGrafoGradual() {
         if (grafoSocial == null || grafoSocial.nodos.isEmpty()) return;
 
-        List<NodoRed> vecinosSanosDisponibles = new ArrayList<>();
+        List<NodoRed> nuevosInfectados = grafoSocial.expandirUnaOleada();
 
-        for (NodoRed nodo : grafoSocial.nodos) {
-            if (nodo.estaInfectado) {
-                for (NodoRed vecino : nodo.vecinos) {
-                    if (!vecino.estaInfectado && !vecinosSanosDisponibles.contains(vecino)) {
-                        vecinosSanosDisponibles.add(vecino);
-                    }
-                }
+        if (!nuevosInfectados.isEmpty()) {
+            StringBuilder sb = new StringBuilder("La desinformación llegó a: ");
+            for (int i = 0; i < nuevosInfectados.size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(nuevosInfectados.get(i).nombre);
             }
-        }
-
-        if (!vecinosSanosDisponibles.isEmpty()) {
-            Random rand = new Random();
-            NodoRed elegidoParaContagio = vecinosSanosDisponibles.get(rand.nextInt(vecinosSanosDisponibles.size()));
-            elegidoParaContagio.estaInfectado = true;
+            partida.registrarEnBitacora(sb.toString());
+            actualizarBitacora();
         }
 
         if (panelLienzoGrafo != null) {
@@ -204,14 +191,31 @@ public class VentanaJuego extends JFrame {
         }
     }
 
+    /**
+     * Cuando el jugador acierta, sale una campana de verificacion desde la
+     * Alcaldia hacia el foco infectado mas cercano. La ruta la calcula Dijkstra
+     * sobre el grafo ponderado, y se limpia el nodo del final.
+     */
     private void impactarDecisionEnGrafoSocial(boolean exito) {
         if (exito && grafoSocial != null && !grafoSocial.nodos.isEmpty()) {
-            for (NodoRed nodo : grafoSocial.nodos) {
-                if (nodo.estaInfectado) {
-                    nodo.estaInfectado = false;
-                    break;
-                }
+
+            NodoRed sedeCampana = grafoSocial.buscar("Alcaldía");
+            if (sedeCampana == null) {
+                sedeCampana = grafoSocial.nodos.get(0);
             }
+
+            GrafoSocial.Ruta ruta = grafoSocial.rutaAlInfectadoMasCercano(sedeCampana);
+
+            if (ruta.existe()) {
+                NodoRed objetivo = ruta.camino.get(ruta.camino.size() - 1);
+                objetivo.estaInfectado = false;
+                partida.registrarEnBitacora("Campaña de verificación: " + ruta.toString());
+            } else if (sedeCampana.estaInfectado) {
+                sedeCampana.estaInfectado = false;
+                partida.registrarEnBitacora("Campaña de verificación en la propia Alcaldía.");
+            }
+            actualizarBitacora();
+
             if (panelLienzoGrafo != null) {
                 panelLienzoGrafo.repaint();
             }

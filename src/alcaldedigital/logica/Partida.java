@@ -211,6 +211,17 @@ public class Partida {
         return bitacora;
     }
 
+    /**
+     * Registra un evento externo en la bitacora de la partida (por ejemplo lo
+     * que ocurre en el grafo social). Existe para que la interfaz no tenga que
+     * escribir dentro de la lista interna.
+     */
+    public void registrarEnBitacora(String linea) {
+        if (linea != null && !linea.isBlank()) {
+            bitacora.add(linea);
+        }
+    }
+
     /** Habilidad del Periodista: lo mas sospechoso del feed, via consulta por rango en el AVL. */
     public List<Publicacion> publicacionesSospechosas() {
         return feed.menosCreiblesQue(35);
