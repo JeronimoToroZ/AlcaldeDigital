@@ -46,7 +46,26 @@ public class DialogoJuego extends JDialog {
     public static final Color CAFE_OSCURO = new Color(0x26, 0x15, 0x0E);
     public static final Color VERDE = new Color(0x8F, 0xD6, 0x9A);
     public static final Color ROJO = new Color(0xF0, 0x8A, 0x80);
-    public static final String FUENTE = "Georgia";
+    /**
+     * Misma familia que la portada. Antes decia "Georgia" a secas: si la
+     * maquina no la tiene, Java cae en una fuente cualquiera sin avisar, y la
+     * pantalla de inicio y los dialogos terminan en tipografias distintas.
+     */
+    public static final String FUENTE = elegirFuente(
+            "Constantia", "Palatino Linotype", "Book Antiqua", "Garamond",
+            "Georgia", "Times New Roman", "Serif");
+
+    private static String elegirFuente(String... candidatas) {
+        java.util.Set<String> hay = new java.util.HashSet<>(java.util.Arrays.asList(
+                java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+                        .getAvailableFontFamilyNames()));
+        for (String f : candidatas) {
+            if (hay.contains(f)) {
+                return f;
+            }
+        }
+        return candidatas[candidatas.length - 1];
+    }
     public static final String RUTA = "/alcaldedigital/recursos/";
 
     private static final int RADIO = 28;
@@ -86,7 +105,9 @@ public class DialogoJuego extends JDialog {
         fondo.setBorder(BorderFactory.createEmptyBorder(20, 30, 20, 30));
 
         JLabel lblTitulo = new JLabel(titulo, SwingConstants.CENTER);
-        lblTitulo.setFont(new Font(FUENTE, Font.BOLD | Font.ITALIC, 30));
+        // Sin cursiva y con espaciado: la cursiva lo hacia ver decorativo, y
+        // este titulo tiene que leerse de un vistazo, no admirarse.
+        lblTitulo.setFont(fuenteEspaciada(Font.BOLD, 26, 0.14));
         lblTitulo.setForeground(ORO);
 
         JPanel cabecera = new JPanel(new BorderLayout(0, 6));
@@ -107,6 +128,71 @@ public class DialogoJuego extends JDialog {
     /** Coloca el contenido principal del diálogo (entre el título y los botones). */
     protected void setContenido(JComponent contenido) {
         fondo.add(contenido, BorderLayout.CENTER);
+    }
+
+    /**
+     * Boton rectangular de contorno, igual a los de la portada.
+     *
+     * El BotonDorado de abajo es una pastilla con degradado: se disena para
+     * otra epoca del juego y desentona con el menu, que es plano y de bordes
+     * rectos. Este existe para que un dialogo pueda verse como el menu.
+     */
+    public static class BotonPlano extends JButton {
+
+        private final boolean principal;
+
+        public BotonPlano(String texto, boolean principal) {
+            super(texto);
+            this.principal = principal;
+            setFont(fuenteEspaciada(Font.BOLD, principal ? 16 : 14, 0.16));
+            setContentAreaFilled(false);
+            setBorderPainted(false);
+            setFocusPainted(false);
+            setOpaque(false);
+            setRolloverEnabled(true);
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            FontMetrics fm = getFontMetrics(getFont());
+            setPreferredSize(new Dimension(
+                    Math.max(190, fm.stringWidth(texto) + 58), principal ? 50 : 44));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                    RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            int w = getWidth();
+            int h = getHeight();
+            boolean activo = getModel().isRollover() || isFocusOwner();
+            int dy = getModel().isPressed() ? 1 : 0;
+
+            if (principal) {
+                g2.setColor(activo ? new Color(0xF6, 0xDA, 0x9A) : ORO);
+                g2.fillRect(0, dy, w, h - 1);
+            } else {
+                g2.setColor(new Color(0, 0, 0, activo ? 110 : 60));
+                g2.fillRect(0, dy, w, h - 1);
+            }
+            g2.setColor(principal ? new Color(0x96, 0x6A, 0x2E) : conAlfa(ORO, activo ? 255 : 170));
+            g2.setStroke(new BasicStroke(activo && !principal ? 2.2f : 1.6f));
+            g2.drawRect(1, dy + 1, w - 3, h - 4);
+
+            g2.setFont(getFont());
+            g2.setColor(principal ? CAFE_OSCURO : (activo ? CREMA : conAlfa(CREMA, 200)));
+            FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(getText(), (w - fm.stringWidth(getText())) / 2,
+                    dy + (h - fm.getHeight()) / 2 + fm.getAscent());
+            g2.dispose();
+        }
+    }
+
+    /** Boton plano que cierra el dialogo; Enter tambien lo pulsa. */
+    protected BotonPlano botonCerrar(String texto) {
+        BotonPlano b = new BotonPlano(texto, true);
+        b.addActionListener(e -> dispose());
+        getRootPane().setDefaultButton(b);
+        return b;
     }
 
     /** Agrega un botón al pie del diálogo. */
@@ -136,6 +222,21 @@ public class DialogoJuego extends JDialog {
 
     public static Font fuente(int estilo, int tamano) {
         return new Font(FUENTE, estilo, tamano);
+    }
+
+    /**
+     * La misma fuente, pero con espaciado entre letras.
+     *
+     * Es lo que diferencia un titulo compuesto de un texto puesto con la
+     * fuente que habia. TextAttribute.TRACKING funciona en componentes Swing,
+     * asi que no hay que dibujar letra por letra.
+     *
+     * @param espacio fraccion del cuerpo; 0.12 es un espaciado notorio
+     */
+    public static Font fuenteEspaciada(int estilo, int tamano, double espacio) {
+        java.util.Map<java.awt.font.TextAttribute, Object> atributos = new java.util.HashMap<>();
+        atributos.put(java.awt.font.TextAttribute.TRACKING, espacio);
+        return new Font(FUENTE, estilo, tamano).deriveFont(atributos);
     }
 
     public static JLabel etiqueta(String texto, int estilo, int tamano, Color color) {

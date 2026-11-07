@@ -2,6 +2,7 @@ package alcaldedigital.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -11,7 +12,6 @@ import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.Window;
-import java.awt.Dimension;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
 import javax.swing.JComponent;
@@ -20,54 +20,82 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 
 /**
- * Ventana de instrucciones del minijuego de burbujas, con el mismo estilo
- * que los Ajustes. Se usa en dos momentos:
- *   - al iniciar la partida ({@link #instruccionesIniciales(Window)}), y
- *   - desde el botón Ayuda de la barra superior ({@link #ayuda(Window)}).
+ * Pantalla de "Cómo se juega".
  *
- * Cada acción se muestra con la imagen de su burbuja al lado del nombre,
- * para que el jugador reconozca los símbolos durante el juego.
+ * Se abre en dos momentos: desde el menu principal, antes de jugar, y desde el
+ * boton de ayuda durante la partida. Es la pantalla que decide si alguien que
+ * pasa frente al stand se sienta, asi que responde tres preguntas en ese orden:
+ * de que va esto, que hago en mi turno, y que significa cada simbolo.
+ *
+ * Dos cosas que antes no estaban:
+ *
+ *  - Explica el MAPA. Hacer clic en un vecino para desmentir no se descubre
+ *    solo, y es la mecanica que ensena de que trata el juego.
+ *  - Los numeros son los del codigo. Antes decia "20 burbujas flotantes" y en
+ *    pantalla hay como mucho 9: una instruccion que miente es peor que no
+ *    tener instrucciones.
  */
 public class DialogoInstrucciones extends DialogoJuego {
 
     private static final int ANCHO_TEXTO = 470;
 
-    /** Datos de cada símbolo: imagen (en recursos), nombre, color y cuándo usarlo. */
+    /** Datos de cada símbolo: imagen, nombre y cuándo usarlo. */
     private static final String[][] SIMBOLOS = {
-        {"compartir.png", "Compartir", "Información útil y confiable para la comunidad: ayúdala a circular."},
-        {"verificar.png", "Verificar", "Dice ser oficial, pero hay que confirmar la fuente antes de creerle."},
-        {"ignorar.png", "Ignorar", "Opiniones o rumores sin sustento: no les des más alcance."},
-        {"reportar.png", "Reportar", "Acusaciones graves sin pruebas: denúncialas para frenar el daño."},
+        {"compartir.png", "Compartir", "Información útil y confiable: ayúdala a circular."},
+        {"verificar.png", "Verificar", "Dice ser oficial, pero hay que confirmar la fuente."},
+        {"ignorar.png", "Ignorar", "Opiniones o rumores sin sustento: no les des alcance."},
+        {"reportar.png", "Reportar", "Acusaciones graves sin pruebas: frena el daño."},
     };
 
+    /**
+     * Un tono claro del color de cada burbuja.
+     *
+     * Antes eran morado, verde, azul y rosa: los colores de los botones
+     * brillantes que se quitaron del juego. El nombre quedaba de un color y su
+     * propio icono, al lado, de otro.
+     */
     private static final Color[] COLORES = {
-        new Color(0xB9, 0x8C, 0xE6),   // morado - compartir
-        new Color(0x8F, 0xD6, 0x9A),   // verde  - verificar
-        new Color(0x86, 0xC5, 0xF0),   // azul   - ignorar
-        new Color(0xF0, 0x8A, 0x80),   // rojo   - reportar
+        new Color(0x7F, 0xB4, 0xCC),   // azul petróleo claro - compartir
+        new Color(0xE3, 0xB4, 0x5E),   // ocre claro          - verificar
+        new Color(0xB5, 0xAA, 0x98),   // gris cálido claro   - ignorar
+        new Color(0xDD, 0x81, 0x78),   // ladrillo claro      - reportar
     };
 
-    private DialogoInstrucciones(Window padre, String titulo, String subtitulo,
-                                 String[] pasos, String cierre) {
+    private static final String[] PASOS = {
+        "Lee la publicación. Tienes 5 segundos antes de que aparezcan las burbujas.",
+        "Revienta 8 burbujas con el símbolo de la acción correcta. Los símbolos "
+                + "cambian cada 1,8 segundos, así que decide antes de disparar.",
+        "Entre una situación y la siguiente, el rumor avanza una oleada por la ciudad."
+    };
+
+    private static final String TITULO_MAPA = "El mapa no es decoración";
+    private static final String TEXTO_MAPA =
+            "Haz clic en un vecino para hablarle y desmentir el rumor. Solo se retracta "
+            + "quien todavía no lo ha pasado: a quien ya lo contó, el desmentido le llega "
+            + "tarde y se queda en rojo. Por eso conviene desmentir temprano.";
+
+    private DialogoInstrucciones(Window padre, String titulo, String subtitulo, String cierre) {
         super(padre, titulo);
 
         JPanel cuerpo = new JPanel();
         cuerpo.setOpaque(false);
         cuerpo.setLayout(new BoxLayout(cuerpo, BoxLayout.Y_AXIS));
 
-        JLabel lblSub = etiqueta(subtitulo, Font.ITALIC, 17, CREMA);
+        JLabel lblSub = parrafo(subtitulo, ANCHO_TEXTO, 15, CREMA);
         lblSub.setHorizontalAlignment(SwingConstants.CENTER);
         lblSub.setAlignmentX(0.5f);
         cuerpo.add(lblSub);
-        cuerpo.add(espacio(12));
+        cuerpo.add(espacio(16));
 
-        // --- Pasos numerados ---
+        cuerpo.add(rotulo("TU TURNO"));
+        cuerpo.add(espacio(8));
+
         JPanel listaPasos = new JPanel(new GridBagLayout());
         listaPasos.setOpaque(false);
         GridBagConstraints c = new GridBagConstraints();
         c.anchor = GridBagConstraints.NORTHWEST;
-        c.insets = new Insets(3, 0, 3, 10);
-        for (int i = 0; i < pasos.length; i++) {
+        c.insets = new Insets(4, 0, 4, 10);
+        for (int i = 0; i < PASOS.length; i++) {
             c.gridy = i;
             c.gridx = 0;
             c.weightx = 0;
@@ -76,16 +104,26 @@ public class DialogoInstrucciones extends DialogoJuego {
             c.gridx = 1;
             c.weightx = 1;
             c.fill = GridBagConstraints.HORIZONTAL;
-            listaPasos.add(parrafo(pasos[i], ANCHO_TEXTO - 40, 15, CREMA), c);
+            listaPasos.add(parrafo(PASOS[i], ANCHO_TEXTO - 40, 15, CREMA), c);
         }
         listaPasos.setAlignmentX(0.5f);
         cuerpo.add(listaPasos);
-        cuerpo.add(espacio(14));
+        cuerpo.add(espacio(16));
 
-        // --- Símbolos con su imagen ---
-        JLabel lblSimbolos = etiqueta("Los símbolos de las burbujas", Font.BOLD, 17, ORO);
-        lblSimbolos.setAlignmentX(0.5f);
-        cuerpo.add(lblSimbolos);
+        // El mapa va en su propio bloque destacado: es lo que nadie descubre
+        // solo y lo que de verdad explica el juego.
+        Tarjeta mapa = new Tarjeta(new BorderLayout(0, 4), ORO);
+        JLabel lblMapa = etiqueta(TITULO_MAPA, Font.BOLD, 16, ORO);
+        mapa.add(lblMapa, BorderLayout.NORTH);
+        // El ancho del parrafo tiene que descontar el relleno de la Tarjeta:
+        // con el ancho completo, el texto se salia por la derecha y se cortaba.
+        mapa.add(parrafo(TEXTO_MAPA, ANCHO_TEXTO - 80, 14, CREMA), BorderLayout.CENTER);
+        mapa.setAlignmentX(0.5f);
+        mapa.setMaximumSize(new Dimension(ANCHO_TEXTO + 30, 220));
+        cuerpo.add(mapa);
+        cuerpo.add(espacio(16));
+
+        cuerpo.add(rotulo("LOS CUATRO SÍMBOLOS"));
         cuerpo.add(espacio(8));
 
         JPanel grilla = new JPanel(new GridLayout(2, 2, 12, 12));
@@ -97,49 +135,45 @@ public class DialogoInstrucciones extends DialogoJuego {
         cuerpo.add(grilla);
 
         if (cierre != null) {
-            cuerpo.add(espacio(14));
+            cuerpo.add(espacio(16));
             JLabel lblCierre = parrafo(cierre, ANCHO_TEXTO, 15, ORO);
-            lblCierre.setFont(fuente(Font.BOLD | Font.ITALIC, 15));
+            lblCierre.setFont(fuenteEspaciada(Font.BOLD, 15, 0.04));
             lblCierre.setHorizontalAlignment(SwingConstants.CENTER);
             lblCierre.setAlignmentX(0.5f);
             cuerpo.add(lblCierre);
         }
 
         setContenido(cuerpo);
-        agregarBoton(botonAceptar());
+        agregarBoton(botonCerrar(padre == null ? "ENTENDIDO" : "ENTENDIDO"));
     }
 
-    /** Instrucciones que aparecen al empezar la partida. */
+    /** Rótulo de sección: mayúsculas espaciadas, como en la portada. */
+    private static JLabel rotulo(String texto) {
+        JLabel l = new JLabel(texto, SwingConstants.CENTER);
+        l.setFont(fuenteEspaciada(Font.BOLD, 14, 0.20));
+        l.setForeground(ORO);
+        l.setAlignmentX(0.5f);
+        return l;
+    }
+
+    /** Instrucciones al empezar la partida. */
     public static void instruccionesIniciales(Window padre) {
-        new DialogoInstrucciones(padre, "Instrucciones",
-                "¡Bienvenido a Alcalde Digital!",
-                new String[]{
-                    "Analiza el post que aparece en pantalla durante 5 segundos.",
-                    "Dispara rápidamente a 8 burbujas correctas entre 20 burbujas flotantes.",
-                    "¡Atención! Los símbolos de las burbujas cambian cada 1.8 segundos.",
-                    "Si tocas una burbuja equivocada, la situación se resuelve como error."
-                },
-                "¡Menor tiempo de reacción otorga mayor puntuación extra en cada turno!").mostrar();
+        new DialogoInstrucciones(padre, "CÓMO SE JUEGA",
+                "Ciudad Nova está en campaña y un rumor falso ya salió del Parque. "
+                + "Tú decides qué hacer con cada publicación que llega.",
+                "Cuatro situaciones. Gana quien más acierte y más rápido.").mostrar();
     }
 
-    /** Ayuda disponible en cualquier momento desde la barra superior del juego. */
+    /** La misma pantalla, desde el botón de ayuda. */
     public static void ayuda(Window padre) {
-        new DialogoInstrucciones(padre, "Ayuda",
-                "Instrucciones del minijuego de burbujas",
-                new String[]{
-                    "Lee el post dentro del recuadro central.",
-                    "Dispara con el ratón a 8 burbujas correctas entre 20 burbujas flotantes "
-                            + "que se desplazan por la pantalla.",
-                    "Los símbolos de las burbujas cambian cada 1.8 segundos."
-                },
-                "Gana más puntos quien lo haga más rápido en las 4 situaciones.").mostrar();
+        instruccionesIniciales(padre);
     }
 
     // ------------------------------------------------------------------
 
     private static JPanel tarjetaSimbolo(String imagen, String nombre, String descripcion, Color color) {
         Tarjeta t = new Tarjeta(new BorderLayout(12, 0), color);
-        ImageIcon ic = icono(imagen, 58);
+        ImageIcon ic = icono(imagen, 54);
         JLabel lblImg = new JLabel(ic);
         if (ic == null) {
             lblImg.setText("?");
@@ -148,7 +182,9 @@ public class DialogoInstrucciones extends DialogoJuego {
 
         JPanel textos = new JPanel(new BorderLayout(0, 2));
         textos.setOpaque(false);
-        textos.add(etiqueta(nombre, Font.BOLD, 18, color), BorderLayout.NORTH);
+        JLabel lblNombre = etiqueta(nombre, Font.BOLD, 17, color);
+        lblNombre.setFont(fuenteEspaciada(Font.BOLD, 17, 0.05));
+        textos.add(lblNombre, BorderLayout.NORTH);
         textos.add(parrafo(descripcion, 150, 13, CREMA), BorderLayout.CENTER);
         t.add(textos, BorderLayout.CENTER);
         return t;

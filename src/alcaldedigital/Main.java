@@ -11,6 +11,136 @@ import javax.swing.UIManager;
  * Clase principal que inicializa el sistema, configura la interfaz gráfica
  * y gestiona el registro inicial de los participantes de la partida.
  * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
  * @author Naty
  */
 public class Main {
@@ -37,14 +167,15 @@ public class Main {
      * También se usa al terminar una campaña con "Volver al inicio".
      */
     public static void mostrarPortada() {
-        new alcaldedigital.gui.PantallaInicio(Main::iniciarPartida).setVisible(true);
+        alcaldedigital.gui.Transicion.entrar(
+                new alcaldedigital.gui.PantallaInicio(Main::pantallaDeJugadores));
     }
 
-    /** Se ejecuta al pulsar START: abre el registro de jugadores y luego el tablero. */
-    private static void iniciarPartida() {
-        new PantallaJugadores(jugadores -> {
-            Partida partida = new Partida(jugadores, 4);
-            new VentanaJuego(partida).setVisible(true);
-        }).setVisible(true);
+    /**
+     * Construye el registro de jugadores. No lo muestra: lo devuelve, y la
+     * transicion lo abre cuando la pantalla ya esta en negro.
+     */
+    private static PantallaJugadores pantallaDeJugadores() {
+        return new PantallaJugadores(jugadores -> new VentanaJuego(new Partida(jugadores, 4)));
     }
 }

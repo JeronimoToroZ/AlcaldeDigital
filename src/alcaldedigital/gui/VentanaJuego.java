@@ -50,6 +50,10 @@ public class VentanaJuego extends JFrame {
 
     private final GrafoSocial grafoSocial = new GrafoSocial();
     private JPanel panelLienzoGrafo;
+    private PanelMinijuegoBurbujas panelMinijuego;
+    private final JTextArea areaAviso = new JTextArea();
+    private JScrollPane panelAviso;
+    private Timer timerAviso;
     private Timer timerPropagacionGrafo;
 
     private final JLabel lblTitulo = new JLabel("ALCALDE DIGITAL");
@@ -62,7 +66,6 @@ public class VentanaJuego extends JFrame {
     private JScrollPane scrollBitacora;
     private final PanelIndicadores panelIndicadores;
     private final PanelArbolAVL panelArbol;
-    private final JTabbedPane pestanas = new JTabbedPane();
 
     private final Map<Jugador, Long> tiemposTotalesJugadores = new HashMap<>();
     private boolean juegoIniciado = false;
@@ -108,26 +111,26 @@ public class VentanaJuego extends JFrame {
 
         setTitle("Alcalde Digital - Ciudad Nova");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1200, 780);
-        setMinimumSize(new Dimension(1000, 720));
+        setSize(1360, 880);
+        setMinimumSize(new Dimension(1180, 760));
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
         barraSuperior = construirBarraSuperior();
         add(barraSuperior, BorderLayout.NORTH);
 
-        JScrollPane scrollArbol = new JScrollPane(panelArbol);
-        scrollArbol.setBorder(BorderFactory.createEmptyBorder());
-        Tema.estilizarScroll(scrollArbol);
-
-        pestanas.setUI(new Tema.PestanasUI());
-        pestanas.setFocusable(false);
-        pestanas.addTab("Partida", construirPestanaPartida());
-        pestanas.addTab("Ciudad y jugadores", construirPestanaCiudad());
-        pestanas.addTab("Árbol AVL del feed", scrollArbol);
-        pestanas.addTab("Árbol de decisión", construirPestanaDecision());
-        pestanas.addTab("Red Social (Grafo)", construirPestanaRedSocial());
-        add(pestanas, BorderLayout.CENTER);
+        // Pantalla unica. Antes esto eran cinco pestanas, y como el jugador solo
+        // puede ver una a la vez, el 92% de la pantalla terminaba siendo papel
+        // tapiz: la ciudad, los indicadores y la bitacora estaban escondidos
+        // justo cuando mas falta hacen, que es mientras se decide.
+        //
+        // Ahora las tres cosas conviven: la ciudad a la izquierda (se ve el
+        // rumor avanzando), la partida al centro, los indicadores a la derecha.
+        // El AVL y el arbol de decision pasan a un boton, porque sirven en la
+        // sustentacion y no durante el turno.
+        add(construirColumnaIzquierda(), BorderLayout.WEST);
+        add(construirPestanaPartida(), BorderLayout.CENTER);
+        add(construirColumnaIndicadores(), BorderLayout.EAST);
 
         aplicarTema();
 
@@ -238,7 +241,11 @@ public class VentanaJuego extends JFrame {
         super.setVisible(b);
         if (b && !juegoIniciado) {
             juegoIniciado = true;
-            mostrarInstruccionesIniciales();
+            // invokeLater y no una llamada directa: el dialogo de
+            // instrucciones es modal y bloquea el hilo de Swing hasta que lo
+            // cierran. Llamandolo aqui mismo, setVisible no retornaba, y
+            // cualquier animacion de entrada se quedaba congelada a medias.
+            javax.swing.SwingUtilities.invokeLater(this::mostrarInstruccionesIniciales);
         }
     }
 
@@ -270,8 +277,16 @@ public class VentanaJuego extends JFrame {
         btnAjustes.setPreferredSize(new Dimension(46, btnAjustes.altoParaAncho(46)));
         btnAjustes.addActionListener(e -> new DialogoAjustes(this).setVisible(true));
 
+        // Las estructuras de datos ya no son pestanas: viven aqui, a un clic,
+        // porque se miran en la sustentacion y no en mitad de un turno.
+        Tema.Boton btnEstructuras = new Tema.Boton("VER ESTRUCTURAS", Tema::acento);
+        btnEstructuras.setPreferredSize(new Dimension(190, 42));
+        btnEstructuras.addActionListener(e -> abrirEstructuras());
+
         JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
         derecha.setOpaque(false);
+        derecha.add(btnEstructuras);
+        derecha.add(javax.swing.Box.createHorizontalStrut(6));
         derecha.add(lblTiempo);
         derecha.add(javax.swing.Box.createHorizontalStrut(6));
         derecha.add(btnAyuda);
@@ -287,40 +302,9 @@ public class VentanaJuego extends JFrame {
         raiz.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
 
         PanelMinijuegoBurbujas panelJuego = new PanelMinijuegoBurbujas(this);
-
-        areaBitacora.setEditable(false);
-        areaBitacora.setLineWrap(true);
-        areaBitacora.setWrapStyleWord(true);
-        areaBitacora.setFont(Tema.mono());
-        scrollBitacora = new JScrollPane(areaBitacora);
-        scrollBitacora.setPreferredSize(new Dimension(400, 140));
-        scrollBitacora.setBorder(bordeTitulado("Bitácora de Disparos"));
-        Tema.estilizarScroll(scrollBitacora);
-        scrollBitacora.setVisible(false);
-
-        JPanel panelSurOculto = new JPanel(new BorderLayout());
-        panelSurOculto.setOpaque(false);
-
-        JButton btnToggleBitacora = new JButton("📜 Ver Bitácora de Eventos");
-        btnToggleBitacora.setFocusPainted(false);
-        btnToggleBitacora.setFont(Tema.indicadorNegrita());
-        btnToggleBitacora.addActionListener(e -> {
-            boolean visible = scrollBitacora.isVisible();
-            scrollBitacora.setVisible(!visible);
-            btnToggleBitacora.setText(visible ? "📜 Ver Bitácora de Eventos" : "📜 Ocultar Bitácora");
-            raiz.revalidate();
-            raiz.repaint();
-        });
-
-        JPanel panelBotonEsquina = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        panelBotonEsquina.setOpaque(false);
-        panelBotonEsquina.add(btnToggleBitacora);
-
-        panelSurOculto.add(panelBotonEsquina, BorderLayout.NORTH);
-        panelSurOculto.add(scrollBitacora, BorderLayout.SOUTH);
+        this.panelMinijuego = panelJuego;
 
         raiz.add(panelJuego, BorderLayout.CENTER);
-        raiz.add(panelSurOculto, BorderLayout.SOUTH);
         return raiz;
     }
 
@@ -349,7 +333,9 @@ public class VentanaJuego extends JFrame {
             setFocusable(true);
 
             try {
-                imgFondo = new javax.swing.ImageIcon(getClass().getResource("/alcaldedigital/recursos/fondo_transparente.png")).getImage();
+                // fondo_transparente.png ya no se dibuja (el minijuego usa el
+                // color liso del tema), pero se seguia cargando: 2,2 MB y unos
+                // 136 ms de espera por una imagen que nadie ve.
                 
                 imgAcciones.put(Accion.VERIFICAR, new javax.swing.ImageIcon(getClass().getResource("/alcaldedigital/recursos/verificar.png")).getImage());
                 imgAcciones.put(Accion.REPORTAR, new javax.swing.ImageIcon(getClass().getResource("/alcaldedigital/recursos/reportar.png")).getImage());
@@ -373,7 +359,7 @@ public class VentanaJuego extends JFrame {
                     for (int i = burbujasActivas.size() - 1; i >= 0; i--) {
                         Burbuja b = burbujasActivas.get(i);
                         double distancia = Math.sqrt(Math.pow(mouseX - b.x, 2) + Math.pow(mouseY - b.y, 2));
-                        if (distancia <= 52) { 
+                        if (distancia <= RADIO_CLIC_BURBUJA) {
                             long milisegundosTardados = System.currentTimeMillis() - tiempoInicioAccion;
                             if (b.accion == accionCorrectaRonda) {
                                 burbujasExplotadasCorrectas++;
@@ -488,42 +474,81 @@ public class VentanaJuego extends JFrame {
                     int h = getHeight();
                     if (w < 450 || h < 450) return;
 
-                    int postAncho = 450;
-                    int postAlto = 450;
-                    int postX = (w / 2) - (postAncho / 2);
-                    int postY = (h / 2) - (postAlto / 2);
+                    // Menos burbujas a la vez: la columna del centro es mas
+                    // angosta que la pantalla completa de antes, y 20 burbujas
+                    // ahi dentro se ven como una sopa.
+                    if (burbujasActivas.size() < 9 && rand.nextInt(100) < 40) {
+                        int margen = DIAMETRO_BURBUJA / 2 + 6;
+                        int x = 0;
+                        int y = 0;
+                        boolean hayCupo = false;
 
-                    if (burbujasActivas.size() < 20 && rand.nextInt(100) < 55) {
-                        int x, y;
-                        int intentos = 0;
-                        do {
-                            x = rand.nextInt(w - 100) + 50;
-                            y = rand.nextInt(h - 100) + 50;
-                            intentos++;
-                        } while (x >= postX - 55 && x <= postX + postAncho + 55 && 
-                                 y >= postY - 55 && y <= postY + postAlto + 55 && intentos < 35);
+                        int yMin = FRANJA_TEXTO + margen;
+                        int yMax = h - FRANJA_TEXTO - margen;
+                        for (int intentos = 0; intentos < 60 && !hayCupo; intentos++) {
+                            x = rand.nextInt(Math.max(1, w - margen * 2)) + margen;
+                            y = rand.nextInt(Math.max(1, yMax - yMin)) + yMin;
+                            if (sobreElPost(x, y)) {
+                                continue;
+                            }
+                            hayCupo = true;
+                            for (Burbuja otra : burbujasActivas) {
+                                if (Math.hypot(x - otra.x, y - otra.y) < SEPARACION_BURBUJAS) {
+                                    hayCupo = false;
+                                    break;
+                                }
+                            }
+                        }
 
-                        Accion[] otrasAcciones = {Accion.REPORTAR, Accion.VERIFICAR, Accion.COMPARTIR, Accion.IGNORAR};
-                        Accion colorAsignado = (rand.nextInt(100) < 35) ? accionCorrectaRonda : otrasAcciones[rand.nextInt(otrasAcciones.length)];
-
-                        burbujasActivas.add(new Burbuja(x, y, colorAsignado));
+                        // Si no hay sitio, NO aparece. Antes se soltaba igual
+                        // encima del post o encima de otra, y se quedaba ahi
+                        // vibrando: ese era el amontonamiento.
+                        if (hayCupo) {
+                            Accion[] otrasAcciones = {Accion.REPORTAR, Accion.VERIFICAR, Accion.COMPARTIR, Accion.IGNORAR};
+                            Accion colorAsignado = (rand.nextInt(100) < 35) ? accionCorrectaRonda : otrasAcciones[rand.nextInt(otrasAcciones.length)];
+                            burbujasActivas.add(new Burbuja(x, y, colorAsignado));
+                        }
                     }
+
+                    int borde = DIAMETRO_BURBUJA / 2 + 4;
+                    int[] post = areaPost();
 
                     for (Burbuja b : burbujasActivas) {
                         b.x += b.vx;
                         b.y += b.vy;
 
-                        if (b.x < 50) { b.x = 50; b.vx *= -1; }
-                        if (b.x > w - 50) { b.x = w - 50; b.vx *= -1; }
-                        if (b.y < 50) { b.y = 50; b.vy *= -1; }
-                        if (b.y > h - 50) { b.y = h - 50; b.vy *= -1; }
+                        if (b.x < borde) { b.x = borde; b.vx = Math.abs(b.vx); }
+                        if (b.x > w - borde) { b.x = w - borde; b.vx = -Math.abs(b.vx); }
+                        int topeArriba = FRANJA_TEXTO + borde;
+                        int topeAbajo = h - FRANJA_TEXTO - borde;
+                        if (b.y < topeArriba) { b.y = topeArriba; b.vy = Math.abs(b.vy); }
+                        if (b.y > topeAbajo) { b.y = topeAbajo; b.vy = -Math.abs(b.vy); }
 
-                        if (b.x >= postX - 55 && b.x <= postX + postAncho + 55 &&
-                            b.y >= postY - 55 && b.y <= postY + postAlto + 55) {
-                            b.vx *= -1;
-                            b.vy *= -1;
-                            b.x += b.vx * 4;
-                            b.y += b.vy * 4;
+                        // Repelido del post: se saca por el lado MAS CERCANO,
+                        // una sola vez. Antes se le invertian las dos
+                        // velocidades en cada cuadro mientras estuviera dentro,
+                        // asi que una burbuja atrapada vibraba en el sitio en
+                        // vez de salir.
+                        if (sobreElPost(b.x, b.y)) {
+                            int izq = b.x - (post[0] - MARGEN_POST);
+                            int der = (post[0] + post[2] + MARGEN_POST) - b.x;
+                            int arr = b.y - (post[1] - MARGEN_POST);
+                            int aba = (post[1] + post[2] + MARGEN_POST) - b.y;
+                            int menor = Math.min(Math.min(izq, der), Math.min(arr, aba));
+
+                            if (menor == izq) {
+                                b.x = post[0] - MARGEN_POST - 1;
+                                b.vx = -Math.abs(b.vx);
+                            } else if (menor == der) {
+                                b.x = post[0] + post[2] + MARGEN_POST + 1;
+                                b.vx = Math.abs(b.vx);
+                            } else if (menor == arr) {
+                                b.y = post[1] - MARGEN_POST - 1;
+                                b.vy = -Math.abs(b.vy);
+                            } else {
+                                b.y = post[1] + post[2] + MARGEN_POST + 1;
+                                b.vy = Math.abs(b.vy);
+                            }
                         }
                     }
 
@@ -545,13 +570,87 @@ public class VentanaJuego extends JFrame {
             timerCambioIconos.start();
         }
 
+        /** Tamano con el que se dibuja cada burbuja. */
+        private static final int DIAMETRO_BURBUJA = 72;
+
+        /** Margen libre que se deja alrededor del post para que vuelen. */
+        private static final int MARGEN_POST = 14;
+
+        /**
+         * Franja de arriba y de abajo donde NO entran burbujas.
+         * Ahi van el rotulo ("Revienta 8...") y la leyenda de acciones; sin
+         * reservarlas, las burbujas les pasan por encima y no se leen.
+         */
+        private static final int FRANJA_TEXTO = 54;
+
+        /**
+         * Lado del post, adaptado al panel.
+         *
+         * Antes era 450 fijo. Cuando la pantalla paso a tres columnas, el
+         * centro quedo en ~560 px y un post de 450 mas su zona de respeto no
+         * dejaba un solo pixel libre donde pudiera aparecer una burbuja.
+         *
+         * Se calcula aqui y lo usan tanto el dibujo como el motor, para que no
+         * puedan volver a desincronizarse.
+         */
+        private int ladoPost() {
+            int libre = Math.min(getWidth() - DIAMETRO_BURBUJA * 2 - MARGEN_POST * 2,
+                                 getHeight() - DIAMETRO_BURBUJA - MARGEN_POST * 2);
+            return Math.max(240, Math.min(450, libre));
+        }
+
+        /** Rectangulo del post: {x, y, lado}. */
+        private int[] areaPost() {
+            int lado = ladoPost();
+            return new int[]{(getWidth() - lado) / 2, (getHeight() - lado) / 2, lado};
+        }
+
+        /** Si un punto cae sobre el post (con su margen). */
+        private boolean sobreElPost(int x, int y) {
+            int[] p = areaPost();
+            return x >= p[0] - MARGEN_POST && x <= p[0] + p[2] + MARGEN_POST
+                && y >= p[1] - MARGEN_POST && y <= p[1] + p[2] + MARGEN_POST;
+        }
+
+        /**
+         * Distancia a la que dos burbujas rebotan. Va aparte del diametro a
+         * proposito: si rebotaran justo al tocarse, achicarlas las dejaria
+         * amontonarse mas y la pantalla se veria igual de saturada.
+         */
+        private static final int SEPARACION_BURBUJAS = 96;
+
+        /**
+         * Radio del area clicable. Mas grande que la burbuja, para que
+         * reducirle el tamano no la vuelva dificil de pegar.
+         */
+        private static final int RADIO_CLIC_BURBUJA = 44;
+
         private void checkBurbujaCollisions() {
-            int diametro = 100;
+            int diametro = SEPARACION_BURBUJAS;
             for (int i = 0; i < burbujasActivas.size(); i++) {
                 for (int j = i + 1; j < burbujasActivas.size(); j++) {
                     Burbuja b1 = burbujasActivas.get(i);
                     Burbuja b2 = burbujasActivas.get(j);
                     double dist = Math.sqrt(Math.pow(b1.x - b2.x, 2) + Math.pow(b1.y - b2.y, 2));
+
+                    // Separarlas por posicion ANTES de tocar las velocidades.
+                    // Intercambiar velocidades no despega a dos burbujas que ya
+                    // estan encimadas: se las intercambian una y otra vez y
+                    // siguen juntas. Hay que empujarlas.
+                    if (dist < diametro && dist > 0.01) {
+                        double empuje = (diametro - dist) / 2.0;
+                        double ux = (b1.x - b2.x) / dist;
+                        double uy = (b1.y - b2.y) / dist;
+                        b1.x += (int) Math.round(ux * empuje);
+                        b1.y += (int) Math.round(uy * empuje);
+                        b2.x -= (int) Math.round(ux * empuje);
+                        b2.y -= (int) Math.round(uy * empuje);
+                    } else if (dist <= 0.01) {
+                        // Exactamente encima: separarlas en cualquier direccion.
+                        b1.x += diametro / 2;
+                        b2.x -= diametro / 2;
+                    }
+
                     if (dist < diametro) {
                         double tempVx = b1.vx;
                         double tempVy = b1.vy;
@@ -588,20 +687,20 @@ public class VentanaJuego extends JFrame {
             int w = getWidth();
             int h = getHeight();
 
-            if (imgFondo != null) {
-                g2d.drawImage(imgFondo, 0, 0, w, h, this);
-            } else {
-                g2d.setColor(new Color(230, 235, 245));
-                g2d.fillRect(0, 0, w, h);
-            }
+            // Fondo liso del tema, no papel tapiz. El skyline pastel que habia
+            // aqui era una tercera estetica peleando con el mapa sepia y con los
+            // botones, y ademas le robaba contraste al post.
+            g2d.setColor(Tema.fondo());
+            g2d.fillRect(0, 0, w, h);
 
             int centroX = w / 2;
             int centroY = h / 2;
 
-            int postAncho = 450;
-            int postAlto = 450;
-            int postX = centroX - (postAncho / 2);
-            int postY = centroY - (postAlto / 2);
+            int[] zonaPost = areaPost();
+            int postAncho = zonaPost[2];
+            int postAlto = zonaPost[2];
+            int postX = zonaPost[0];
+            int postY = zonaPost[1];
 
             if (!imgPosts.isEmpty()) {
                 int indicePost = Math.abs(partida.getTurno() - 1) % imgPosts.size();
@@ -613,46 +712,83 @@ public class VentanaJuego extends JFrame {
 
             Publicacion p = partida.publicacionActual();
 
-            g2d.setColor(new Color(15, 23, 42));
-            g2d.setFont(new java.awt.Font("Serif", java.awt.Font.BOLD, 14)); 
+            g2d.setColor(Tema.texto());
+            g2d.setFont(Tema.indicadorNegrita());
             
             int textoX = postX + 115;           
             int textoY = postY + 190;          
             int textoAnchoMax = postAncho - 220; 
             drawMultilineText(g2d, p.getTexto(), textoX, textoY, textoAnchoMax);
 
+            // Fuentes y colores salen de Tema: antes estaban escritos a mano aqui,
+            // asi que ni seguian la paleta ni respondian al modo alto contraste.
+            // Los emojis tambien se fueron: Swing los pinta como cuadritos rotos.
             if (faseJuego == 0) {
-                g2d.setColor(new Color(185, 28, 28));
-                g2d.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 20));
-                String textoLectura = "🔍 ¡Analiza el Post! Las burbujas aparecen en: " + contadorLectura + "s";
+                g2d.setColor(Tema.texto());
+                g2d.setFont(Tema.subtitulo());
+                String textoLectura = "Lee el post. Las burbujas aparecen en " + contadorLectura + "s";
                 int strWidth = g2d.getFontMetrics().stringWidth(textoLectura);
-                g2d.drawString(textoLectura, centroX - (strWidth / 2), postY - 20);
+                g2d.drawString(textoLectura, centroX - (strWidth / 2), 30);
             } else {
-                g2d.setColor(new Color(20, 83, 45));
-                g2d.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 18));
-                String textoJuego = "🎯 ¡Dispara a 8 burbujas correctas! Restantes: " + (OBJETIVO_BURBUJAS - burbujasExplotadasCorrectas);
+                g2d.setColor(Tema.texto());
+                g2d.setFont(Tema.subtitulo());
+                String textoJuego = "Revienta " + OBJETIVO_BURBUJAS + " burbujas correctas. Faltan "
+                        + (OBJETIVO_BURBUJAS - burbujasExplotadasCorrectas);
                 int strWidth = g2d.getFontMetrics().stringWidth(textoJuego);
-                g2d.drawString(textoJuego, centroX - (strWidth / 2), postY - 20);
-                
-                g2d.setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 13));
-                g2d.setColor(new Color(51, 65, 85));
-                g2d.drawString("🟣 Compartir   |   🟢 Verificar   |   🔵 Ignorar   |   🔴 Reportar", centroX - 180, h - 15);
+                // Arriba del todo, no pegado al post: ahi lo tapaban las burbujas.
+                g2d.drawString(textoJuego, centroX - (strWidth / 2), 30);
+                dibujarLeyenda(g2d, centroX, h - 14);
             }
 
             for (Burbuja b : burbujasActivas) {
                 java.awt.Image imgAccion = imgAcciones.get(b.accion);
                 if (imgAccion != null) {
-                    int diametro = 100;
+                    int diametro = DIAMETRO_BURBUJA;
                     int radio = diametro / 2;
 
                     g2d.setClip(new java.awt.geom.Ellipse2D.Float(b.x - radio, b.y - radio, diametro, diametro));
                     g2d.drawImage(imgAccion, b.x - radio, b.y - radio, diametro, diametro, this);
                     g2d.setClip(null);
 
-                    g2d.setColor(new Color(255, 255, 255, 200));
+                    // El aro ahora es de tinta, no blanco translucido: el blanco
+                    // le ponia un brillo de caramelo que no va con el resto.
+                    g2d.setColor(Tema.borde());
                     g2d.setStroke(new BasicStroke(2.5f));
                     g2d.drawOval(b.x - radio, b.y - radio, diametro, diametro);
                 }
+            }
+        }
+
+        /**
+         * Leyenda de las cuatro acciones, dibujada con los mismos iconos que
+         * llevan las burbujas. Antes era una linea de texto con circulos de
+         * colores en emoji, que ademas nombraba colores equivocados.
+         * Mostrar el icono de verdad evita que la leyenda y el boton se
+         * desincronicen cuando alguien cambie un dibujo.
+         */
+        private void dibujarLeyenda(Graphics2D g2d, int centroX, int y) {
+            Accion[] orden = {Accion.COMPARTIR, Accion.VERIFICAR, Accion.REPORTAR, Accion.IGNORAR};
+            String[] nombres = {"Compartir", "Verificar", "Reportar", "Ignorar"};
+            int icono = 22;
+            int hueco = 10;
+
+            g2d.setFont(Tema.indicador());
+            java.awt.FontMetrics fm = g2d.getFontMetrics();
+            int total = 0;
+            for (String n : nombres) {
+                total += icono + 5 + fm.stringWidth(n) + hueco * 2;
+            }
+
+            int x = centroX - total / 2;
+            for (int i = 0; i < orden.length; i++) {
+                java.awt.Image img = imgAcciones.get(orden[i]);
+                if (img != null) {
+                    g2d.drawImage(img, x, y - icono + 4, icono, icono, this);
+                }
+                x += icono + 5;
+                g2d.setColor(Tema.textoSuave());
+                g2d.drawString(nombres[i], x, y);
+                x += fm.stringWidth(nombres[i]) + hueco * 2;
             }
         }
 
@@ -698,6 +834,13 @@ public class VentanaJuego extends JFrame {
 
         lblTurno.setText("Situación " + partida.getTurno() + " de 4");
 
+        // Un parpadeo corto al cambiar de situacion. Sin el, la publicacion se
+        // reemplaza sin aviso y se puede seguir disparando sin notar que ya es
+        // otra. En la primera no va: ahi acaba de entrar la ventana.
+        if (partida.getTurno() > 1) {
+            Transicion.destello(this);
+        }
+
         propagarInfeccionGrafoGradual();
 
         actualizarMarcador();
@@ -706,24 +849,14 @@ public class VentanaJuego extends JFrame {
         panelArbol.revalidate();
         panelArbol.repaint();
 
-        Component comp = pestanas.getComponentAt(0);
-        if (comp instanceof JPanel) {
-            for (Component hijo : ((JPanel)comp).getComponents()) {
-                if (hijo instanceof PanelMinijuegoBurbujas) {
-                    ((PanelMinijuegoBurbujas) hijo).iniciarRonda();
-                    break;
-                } else if (hijo instanceof JPanel) {
-                    for (Component nieto : ((JPanel)hijo).getComponents()) {
-                        if (nieto instanceof PanelMinijuegoBurbujas) {
-                            ((PanelMinijuegoBurbujas) nieto).iniciarRonda();
-                            break;
-                        }
-                    }
-                }
-            }
+        // Antes esto buscaba el minijuego caminando el arbol de componentes
+        // dos niveles hacia abajo. Cualquier cambio de layout lo rompia, y de
+        // hecho lo rompio. Ahora se guarda la referencia al construirlo.
+        if (panelMinijuego != null) {
+            panelMinijuego.iniciarRonda();
         }
 
-        lblTiempo.setText("Modo Puntuación por Velocidad");
+        lblTiempo.setText("Puntúa por velocidad");
     }
 
     private void resolverTurnoBurbujas(Accion accionElegida, boolean exitoDisparos, long milisegundosTardados) {
@@ -808,24 +941,51 @@ public class VentanaJuego extends JFrame {
         }
     }
 
-    private JPanel construirPestanaCiudad() {
-        areaMarcador.setEditable(false);
-        areaMarcador.setFont(Tema.mono());
-        areaMarcador.setMargin(new java.awt.Insets(10, 14, 10, 14));
-        scrollMarcador = new JScrollPane(areaMarcador);
-        scrollMarcador.setBorder(bordeTitulado("Jugadores"));
-        Tema.estilizarScroll(scrollMarcador);
+    /**
+     * Columna derecha: lo que el jugador necesita mirar mientras decide.
+     * Indicadores de la ciudad arriba, marcador en medio, bitacora abajo.
+     * Nada de esto estaba visible durante el turno; vivia en otra pestana.
+     */
+    private JPanel construirColumnaIndicadores() {
+        areaBitacora.setEditable(false);
+        areaBitacora.setLineWrap(true);
+        areaBitacora.setWrapStyleWord(true);
+        areaBitacora.setFont(Tema.mono());
+        scrollBitacora = new JScrollPane(areaBitacora);
+        scrollBitacora.setBorder(bordeTitulado("Bitácora"));
+        Tema.estilizarScroll(scrollBitacora);
 
-        panelIndicadores.setPreferredSize(new Dimension(400, 300));
-        JPanel izquierda = new JPanel(new BorderLayout());
-        izquierda.setOpaque(false);
-        izquierda.add(panelIndicadores, BorderLayout.NORTH);
-
-        JPanel raiz = new JPanel(new BorderLayout(16, 16));
-        raiz.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
-        raiz.add(izquierda, BorderLayout.WEST);
-        raiz.add(scrollMarcador, BorderLayout.CENTER);
+        // La bitacora se queda sola en esta columna y usa todo el alto: es el
+        // unico panel que de verdad crece con la partida, asi que es el que
+        // aprovecha el espacio en vez de dejarlo en blanco.
+        JPanel raiz = new JPanel(new BorderLayout(0, 12));
+        raiz.setPreferredSize(new Dimension(300, 0));
+        raiz.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 4, 0, 0, Tema.borde()),
+                BorderFactory.createEmptyBorder(14, 14, 14, 14)));
+        raiz.add(scrollBitacora, BorderLayout.CENTER);
         return raiz;
+    }
+
+    /** Abre el AVL y el arbol de decision juntos, en un dialogo con pestanas. */
+    private void abrirEstructuras() {
+        JTabbedPane tp = new JTabbedPane();
+        tp.setUI(new Tema.PestanasUI());
+        tp.setFocusable(false);
+
+        JScrollPane scrollArbol = new JScrollPane(panelArbol);
+        scrollArbol.setBorder(BorderFactory.createEmptyBorder());
+        Tema.estilizarScroll(scrollArbol);
+
+        tp.addTab("Árbol AVL del feed", scrollArbol);
+        tp.addTab("Árbol de decisión", construirPestanaDecision());
+
+        javax.swing.JDialog d = new javax.swing.JDialog(this, "Estructuras de datos", false);
+        tp.setPreferredSize(new Dimension(880, 620));
+        d.setContentPane(tp);
+        d.pack();
+        d.setLocationRelativeTo(this);
+        d.setVisible(true);
     }
 
     private JPanel construirPestanaDecision() {
@@ -848,53 +1008,60 @@ public class VentanaJuego extends JFrame {
         return p;
     }
 
-    private JPanel construirPestanaRedSocial() {
-        PanelConFondo panelRed = new PanelConFondo(new BorderLayout(), "/alcaldedigital/recursos/mapa_ciudad.jpg");
-        panelRed.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
-        
+    /**
+     * Columna izquierda: la ciudad, siempre a la vista.
+     *
+     * El mapa se dibuja CONTENIDO y no estirado, porque es 16:9 y la columna no:
+     * estirarlo achataba los edificios y le hacia un flaco favor a la unica
+     * ilustracion buena que tiene el juego.
+     *
+     * Los nodos se posicionan contra el rectangulo del mapa, no contra el panel.
+     * Si se posicionaran contra el panel, las caras quedarian corridas respecto
+     * a los rotulos (Parque, Hospital, Alcaldia...) apenas aparece una franja.
+     */
+    private PanelConFondo construirColumnaCiudad() {
+        final PanelConFondo panelRed = new PanelConFondo(
+                new BorderLayout(), "/alcaldedigital/recursos/mapa_ciudad.jpg",
+                PanelConFondo.Ajuste.CONTENER);
+        // 410 y no 470: el minijuego necesita ancho para que las burbujas
+        // tengan por donde volar alrededor del post.
+        panelRed.setPreferredSize(new Dimension(410, 0));
+        // Sin borde propio: el filete que separa la columna lo pone el panel
+        // que la contiene. Si los dos lo ponen, el lienzo donde se dibujan los
+        // nodos queda 4 px corrido respecto a donde se detectan los clics.
+
         panelLienzoGrafo = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
+                // Contra el tamano de ESTE panel, no el del padre.
+                int[] a = panelRed.areaDeLaImagenEn(getWidth(), getHeight());
+                if (a == null) {
+                    return;
+                }
                 Graphics2D g2d = (Graphics2D) g;
-                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                int w = getWidth();
-                int h = getHeight();
-
-                if (w <= 0 || h <= 0) return;
-
-                double scaleX = (double) w / 1000.0;
-                double scaleY = (double) h / 800.0;
+                Tema.suavizar(g2d);
 
                 g2d.setColor(new Color(90, 50, 20, 200));
                 g2d.setStroke(new BasicStroke(3.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                
+
                 for (NodoRed nodo : grafoSocial.nodos) {
-                    int x1 = (int) (nodo.x * scaleX);
-                    int y1 = (int) (nodo.y * scaleY);
+                    int x1 = aX(a, nodo);
+                    int y1 = aY(a, nodo);
                     for (NodoRed vecino : nodo.vecinos) {
-                        int x2 = (int) (vecino.x * scaleX);
-                        int y2 = (int) (vecino.y * scaleY);
-                        g2d.drawLine(x1, y1, x2, y2);
+                        g2d.drawLine(x1, y1, aX(a, vecino), aY(a, vecino));
                     }
                 }
 
+                // Los nodos son personas: cara, nombre y estado.
+                // El radio se ata al ancho del mapa para que la cara no se
+                // vuelva una pelotica cuando la columna es angosta.
+                int radio = radioDeLaCara(a);
                 for (NodoRed nodo : grafoSocial.nodos) {
-                    int x = (int) (nodo.x * scaleX);
-                    int y = (int) (nodo.y * scaleY);
-                    
-                    if (nodo.estaInfectado) {
-                        g2d.setColor(new Color(220, 50, 50, 230)); 
-                    } else {
-                        g2d.setColor(new Color(40, 120, 220, 220)); 
-                    }
-                    
-                    g2d.fillOval(x - 16, y - 16, 32, 32);
-                    g2d.setColor(Color.WHITE);
-                    g2d.setStroke(new BasicStroke(2.5f));
-                    g2d.drawOval(x - 16, y - 16, 32, 32);
+                    RetratoCiudadano.dibujar(g2d, nodo, aX(a, nodo), aY(a, nodo), radio);
                 }
+
+
             }
         };
         panelLienzoGrafo.setOpaque(false);
@@ -902,32 +1069,199 @@ public class VentanaJuego extends JFrame {
         panelLienzoGrafo.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                int w = panelLienzoGrafo.getWidth();
-                int h = panelLienzoGrafo.getHeight();
-                if (w <= 0 || h <= 0) return;
-
-                double scaleX = (double) w / 1000.0;
-                double scaleY = (double) h / 800.0;
-
-                int mouseX = e.getX();
-                int mouseY = e.getY();
-
+                int[] a = panelRed.areaDeLaImagenEn(
+                        panelLienzoGrafo.getWidth(), panelLienzoGrafo.getHeight());
+                if (a == null) {
+                    return;
+                }
+                // El mas cercano, no el primero que caiga dentro del radio.
+                // Con dos caras juntas, "el primero" es el que este antes en la
+                // lista, que no tiene nada que ver con donde se hizo clic: por
+                // eso parecia que desmentia al vecino.
+                // Un poco mas generoso que la cara dibujada: acertarle a un
+                // circulo de 24 px con el mouse es incomodo, y como ya se elige
+                // el MAS cercano, ampliar no genera ambiguedad.
+                int radio = radioDeLaCara(a) + 10;
+                NodoRed elegido = null;
+                double mejor = Double.MAX_VALUE;
                 for (NodoRed nodo : grafoSocial.nodos) {
-                    int nodoX = (int) (nodo.x * scaleX);
-                    int nodoY = (int) (nodo.y * scaleY);
-
-                    double distancia = Math.sqrt(Math.pow(mouseX - nodoX, 2) + Math.pow(mouseY - nodoY, 2));
-                    if (distancia <= 22) {
-                        nodo.estaInfectado = false; 
-                        panelLienzoGrafo.repaint();
-                        break;
+                    double d = Math.hypot(e.getX() - aX(a, nodo), e.getY() - aY(a, nodo));
+                    if (d <= radio && d < mejor) {
+                        mejor = d;
+                        elegido = nodo;
                     }
+                }
+                if (elegido != null) {
+                    desmentirDesde(elegido);
                 }
             }
         });
 
         panelRed.add(panelLienzoGrafo, BorderLayout.CENTER);
         return panelRed;
+    }
+
+    /**
+     * La columna izquierda entera: el mapa arriba y el marcador debajo.
+     *
+     * El mapa es 16:9 y la columna es alta y angosta, asi que contenido deja
+     * mas de la mitad de la columna vacia. En vez de dejar ese hueco, el mapa
+     * se ancla arriba con su proporcion exacta y debajo van los jugadores.
+     */
+    private JPanel construirColumnaIzquierda() {
+        PanelConFondo mapa = construirColumnaCiudad();
+        int ancho = 410;
+        mapa.setPreferredSize(new Dimension(ancho, (int) Math.round(ancho / 1.777) + 8));
+
+        areaMarcador.setEditable(false);
+        areaMarcador.setFont(Tema.mono());
+        areaMarcador.setMargin(new java.awt.Insets(10, 14, 10, 14));
+        scrollMarcador = new JScrollPane(areaMarcador);
+        scrollMarcador.setBorder(bordeTitulado("Jugadores"));
+        Tema.estilizarScroll(scrollMarcador);
+
+        // El alto lo decide el panel, no yo: apretarlo a ojo fue lo que hizo
+        // que las barras se montaran sobre las etiquetas.
+        panelIndicadores.setPreferredSize(
+                new Dimension(ancho - 14, PanelIndicadores.altoNecesario()));
+
+        // El aviso del desmentido va DEBAJO del mapa, no encima.
+        // Pintado sobre el mapa tapaba a doña Carmen y a Tatiana, que son
+        // justamente las dos que estan mas abajo.
+        areaAviso.setEditable(false);
+        areaAviso.setLineWrap(true);
+        areaAviso.setWrapStyleWord(true);
+        areaAviso.setFont(Tema.indicador());
+        areaAviso.setMargin(new java.awt.Insets(8, 10, 8, 10));
+        panelAviso = new JScrollPane(areaAviso);
+        panelAviso.setBorder(bordeTitulado("Último desmentido"));
+        panelAviso.setPreferredSize(new Dimension(ancho - 14, 96));
+        panelAviso.setVisible(false);
+        Tema.estilizarScroll(panelAviso);
+
+        JPanel datos = new JPanel(new BorderLayout(0, 12));
+        datos.setOpaque(false);
+        JPanel arriba = new JPanel(new BorderLayout(0, 12));
+        arriba.setOpaque(false);
+        arriba.add(panelAviso, BorderLayout.NORTH);
+        arriba.add(panelIndicadores, BorderLayout.CENTER);
+
+        datos.add(arriba, BorderLayout.NORTH);
+        datos.add(scrollMarcador, BorderLayout.CENTER);
+
+        JPanel raiz = new JPanel(new BorderLayout(0, 12));
+        raiz.setPreferredSize(new Dimension(ancho, 0));
+        raiz.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 0, 4, Tema.borde()),
+                BorderFactory.createEmptyBorder(0, 0, 14, 14)));
+        raiz.add(mapa, BorderLayout.NORTH);
+        raiz.add(datos, BorderLayout.CENTER);
+        return raiz;
+    }
+
+    /**
+     * Radio con el que se dibuja cada cara, atado al ancho del mapa.
+     *
+     * Existe como metodo para que el dibujo y la deteccion del clic usen
+     * literalmente el mismo numero. Cuando estaban escritos aparte (26 al
+     * dibujar, 24 al hacer clic) el area clicable no calzaba con la cara.
+     */
+    private static int radioDeLaCara(int[] area) {
+        return Math.max(16, Math.min(26, area[2] / 19));
+    }
+
+    // Los nodos no se reparten sobre el mapa entero, sino sobre un area algo
+    // mas chica. Si un nodo cae pegado al borde de abajo, su NOMBRE -que va
+    // debajo de la cara- queda por fuera y se corta. Pasaba con Carmen y
+    // Tatiana. Estos margenes reservan ese espacio.
+    private static final double MARGEN_X = 0.045;
+    private static final double MARGEN_ARRIBA = 0.05;
+    private static final double MARGEN_ABAJO = 0.14;
+
+    /**
+     * Muestra u oculta el panel del aviso.
+     *
+     * El revalidate() no es opcional: en un BorderLayout, volver visible un
+     * componente que estaba oculto no le reserva espacio hasta que se recalcula
+     * el layout del contenedor. Sin esto el panel existe, tiene texto, dice que
+     * es visible... y no se ve nada.
+     */
+    private void mostrarAviso(boolean visible) {
+        panelAviso.setVisible(visible);
+        java.awt.Container padre = panelAviso.getParent();
+        if (padre != null) {
+            padre.revalidate();
+            padre.repaint();
+        }
+    }
+
+    /** Pasa la x de un nodo (espacio 1000x800) al rectangulo real del mapa. */
+    private static int aX(int[] area, NodoRed n) {
+        double util = 1.0 - MARGEN_X * 2;
+        return area[0] + (int) Math.round((MARGEN_X + n.x / 1000.0 * util) * area[2]);
+    }
+
+    /** Pasa la y de un nodo (espacio 1000x800) al rectangulo real del mapa. */
+    private static int aY(int[] area, NodoRed n) {
+        double util = 1.0 - MARGEN_ARRIBA - MARGEN_ABAJO;
+        return area[1] + (int) Math.round((MARGEN_ARRIBA + n.y / 800.0 * util) * area[3]);
+    }
+
+    /**
+     * Lanzar un desmentido desde una persona.
+     *
+     * Antes, hacer clic en un nodo simplemente ponia estaInfectado = false:
+     * curaba gratis, a cualquiera, de a uno. Eso no ensena nada y ademas
+     * contradice lo que el juego quiere mostrar.
+     *
+     * Ahora usa GrafoSocial.corregir(), que propaga el desmentido por BFS con
+     * tope de alcance y solo limpia a quien TODAVIA no retransmitio el rumor.
+     * A quien ya lo conto, el desmentido le llega tarde: sigue en rojo. Esa es
+     * toda la leccion, y queda dicha por la mecanica y no por un cartel.
+     */
+    private void desmentirDesde(NodoRed origen) {
+        // Alcance 1, no 2. Con alcance 2 el desmentido saltaba hasta gente que
+        // el jugador no toco, y desde afuera parecia que el juego curaba al
+        // azar. Con 1 la regla se lee sola: le hablas a alguien y a sus
+        // contactos directos, y hasta ahi llega.
+        GrafoSocial.ResultadoCorreccion r = grafoSocial.corregir(origen, 1);
+        panelLienzoGrafo.repaint();
+
+        // "Hablaste con X" y no "Desmentido desde X": el jugador hace clic
+        // sobre una persona para hablarle, y antes el mensaje sonaba a que esa
+        // persona era la que desmentia ("Desmentido desde Tatiana... se
+        // retractaron: Tatiana").
+        StringBuilder sb = new StringBuilder();
+        sb.append("Hablaste con ").append(origen.descripcion()).append(". ");
+        boolean nadie = r.corregidos.isEmpty();
+        if (nadie) {
+            sb.append("Nadie se retractó: ya habían pasado el rumor.");
+        } else {
+            sb.append("Se retractaron ").append(r.corregidos.size()).append(": ");
+            for (int i = 0; i < r.corregidos.size(); i++) {
+                sb.append(i > 0 ? ", " : "").append(r.corregidos.get(i).persona);
+            }
+            sb.append('.');
+        }
+        // Si no se retracto nadie, la razon ya se dijo: no repetirla.
+        if (!nadie && !r.siguenDesinformados.isEmpty()) {
+            sb.append(" Siguen desinformados ").append(r.siguenDesinformados.size())
+              .append(" porque ya lo habían contado.");
+        }
+        partida.registrarEnBitacora(sb.toString());
+        actualizarBitacora();
+
+        // El mismo texto, debajo del mapa, por seis segundos.
+        areaAviso.setText(sb.toString());
+        areaAviso.setCaretPosition(0);
+        mostrarAviso(true);
+        if (timerAviso != null) {
+            timerAviso.stop();
+        }
+        timerAviso = new Timer(6000, ev -> mostrarAviso(false));
+        timerAviso.setRepeats(false);
+        timerAviso.start();
+        panelLienzoGrafo.repaint();
     }
 
     private static javax.swing.border.Border bordeTitulado(String titulo) {
@@ -944,7 +1278,7 @@ public class VentanaJuego extends JFrame {
         pintar(getContentPane());
         lblTitulo.setFont(Tema.titulo());
         lblTurno.setFont(Tema.normal());
-        lblTiempo.setFont(Tema.titulo());
+        lblTiempo.setFont(Tema.indicadorNegrita());
         lblTitulo.setForeground(Tema.texto());
         lblTurno.setForeground(Tema.textoSuave());
         lblTiempo.setForeground(Tema.texto());
@@ -953,12 +1287,14 @@ public class VentanaJuego extends JFrame {
                 BorderFactory.createMatteBorder(0, 0, 4, 0, Tema.borde()),
                 BorderFactory.createEmptyBorder(12, 20, 12, 20)));
 
-        lblTiempo.setOpaque(true);
-        lblTiempo.setBackground(Tema.resaltado());
-        lblTiempo.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(Tema.borde(), 3),
-                BorderFactory.createEmptyBorder(3, 12, 3, 12)));
-        pestanas.revalidate();
+        // Este rotulo llevaba la fuente de titulo (26 px) sobre un bloque de
+        // color: terminaba siendo lo mas llamativo de toda la pantalla, por
+        // encima del juego. Pasa a ser una etiqueta discreta.
+        lblTiempo.setFont(Tema.indicadorNegrita());
+        lblTiempo.setForeground(Tema.textoSuave());
+        lblTiempo.setOpaque(false);
+        lblTiempo.setBorder(BorderFactory.createEmptyBorder(3, 10, 3, 10));
+        revalidate();
         repaint();
     }
 
@@ -975,4 +1311,4 @@ public class VentanaJuego extends JFrame {
             }
         }
     }
-}
+}

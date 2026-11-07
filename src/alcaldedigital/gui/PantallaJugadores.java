@@ -11,7 +11,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.swing.BorderFactory;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
@@ -37,14 +37,18 @@ public class PantallaJugadores extends JFrame {
     private static final Color TEXTO = new Color(0x4A, 0x2A, 0x20);   // marrón oscuro
     private static final String FUENTE = "Georgia";
 
-    private final Consumer<List<Jugador>> alTerminar;
+    private final Function<List<Jugador>, javax.swing.JFrame> alTerminar;
     private final List<Jugador> jugadores = new ArrayList<>();
     private final CardLayout cartas = new CardLayout();
     private final JPanel contenedor = new JPanel(cartas);
     private final PaginaRegistro paginaRegistro = new PaginaRegistro();
     private int cantidad;
 
-    public PantallaJugadores(Consumer<List<Jugador>> alTerminar) {
+    /**
+     * @param alTerminar recibe los jugadores y DEVUELVE la ventana de partida,
+     *                   sin mostrarla: de eso se encarga la transicion.
+     */
+    public PantallaJugadores(Function<List<Jugador>, javax.swing.JFrame> alTerminar) {
         this.alTerminar = alTerminar;
         setTitle("Alcalde Digital");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -73,8 +77,7 @@ public class PantallaJugadores extends JFrame {
         if (indice + 1 < cantidad) {
             paginaRegistro.mostrarJugador(indice + 1);
         } else {
-            dispose();
-            alTerminar.accept(jugadores);
+            Transicion.cambiar(this, () -> alTerminar.apply(jugadores));
         }
     }
 

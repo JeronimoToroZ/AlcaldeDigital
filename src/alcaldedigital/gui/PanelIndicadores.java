@@ -21,11 +21,34 @@ public class PanelIndicadores extends JPanel {
      * Inicializa el panel de indicadores configurando las dimensiones predeterminadas
      * y el color de fondo correspondiente al tema visual.
      */
+    /** Cantidad de indicadores dibujados. */
+    private static final int FILAS = 6;
+
+    /** Alto minimo de una fila: texto (12) + barra (16) + aire (2). */
+    private static final int PASO_MINIMO = 30;
+
+    /** Alto del titulo y su filete. */
+    private static final int ALTO_TITULO = 50;
+
+    /** Alto que ocupa la linea de "Salud global" al final. */
+    private static final int ALTO_SALUD = 44;
+
     public PanelIndicadores(EstadoCiudad ciudad) {
         this.ciudad = ciudad;
-        setPreferredSize(new Dimension(300, 280));
-        setMinimumSize(new Dimension(300, 230));
+        setPreferredSize(new Dimension(300, altoNecesario()));
+        setMinimumSize(new Dimension(260, altoNecesario()));
         setBackground(Tema.panel());
+    }
+
+    /**
+     * Alto que el panel necesita para no encimar nada.
+     *
+     * Existe para que quien lo coloque no tenga que adivinar: si se le da
+     * menos alto que esto, las barras se montan sobre la etiqueta de la fila
+     * siguiente. Fue exactamente lo que paso al apretarlo a 240 px.
+     */
+    public static int altoNecesario() {
+        return ALTO_TITULO + FILAS * PASO_MINIMO + ALTO_SALUD;
     }
  
     /**
@@ -60,7 +83,10 @@ public class PanelIndicadores extends JPanel {
  
         // El espaciado se ajusta a la altura disponible para que nada quede cortado
         // (deja espacio abajo para la línea de "Salud global").
-        int paso = Math.max(24, Math.min(32, (getHeight() - y - 44) / nombres.length));
+        // El minimo es PASO_MINIMO y no 24: con 24 la barra de una fila queda
+        // justo donde empieza el texto de la siguiente y se montan.
+        int paso = Math.max(PASO_MINIMO,
+                Math.min(36, (getHeight() - y - ALTO_SALUD) / nombres.length));
  
         // Iteración para dibujar cada una de las barras de los indicadores
         for (int i = 0; i < nombres.length; i++) {

@@ -117,15 +117,15 @@ public final class Tema {
     // ------------------------------------------------------------------
  
     public static Color acento() {
-        return altoContraste ? new Color(255, 255, 0) : new Color(28, 70, 156);
+        return altoContraste ? new Color(255, 255, 0) : new Color(38, 78, 96);
     }
  
     public static Color positivo() {
-        return altoContraste ? new Color(0, 255, 128) : new Color(20, 126, 72);
+        return altoContraste ? new Color(0, 255, 128) : new Color(42, 104, 64);
     }
  
     public static Color negativo() {
-        return altoContraste ? new Color(255, 128, 0) : new Color(200, 38, 46);
+        return altoContraste ? new Color(255, 128, 0) : new Color(158, 58, 50);
     }
  
     public static Color nodo() {
@@ -134,7 +134,7 @@ public final class Tema {
  
     /** Color de "marcador fluorescente" (usado en el cronómetro). */
     public static Color resaltado() {
-        return altoContraste ? Color.BLACK : new Color(255, 212, 0);
+        return altoContraste ? Color.BLACK : new Color(176, 128, 44);
     }
  
     // ------------------------------------------------------------------
