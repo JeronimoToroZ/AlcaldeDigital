@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Jugar Alcalde Digital",
+      "request": "launch",
+      "mainClass": "alcaldedigital.Main",
+      "classPaths": [
+        "${workspaceFolder}/build/classes",
+        "${workspaceFolder}/src"
+      ]
+    }
+  ]
+}

@@ -97,8 +97,57 @@ public class PruebaGrafoSocial {
         GrafoSocial.Ruta mejor = g3.rutaAlInfectadoMasCercano(g3.buscar("Alcaldía"));
         System.out.println("La campana sale hacia: " + mejor);
 
+        imprimirTitulo("CASO 8 - La correccion NO alcanza a todos");
+        GrafoSocial g4 = new GrafoSocial();
+        g4.inicializarMapaPrueba();
+
+        System.out.println("Se deja correr el rumor desde el Parque hasta el final:");
+        int oleada = 1;
+        List<NodoRed> contagiados;
+        while (!(contagiados = g4.expandirUnaOleada()).isEmpty()) {
+            System.out.println("  Oleada " + oleada + ": " + conPersonas(contagiados));
+            oleada++;
+        }
+        System.out.println("Desinformados: " + g4.infectados().size() + " de " + g4.nodos.size());
+
+        System.out.println();
+        System.out.println("Quien le paso el rumor a quien:");
+        for (NodoRed n : g4.nodos) {
+            if (n.contagiadoPor != null) {
+                System.out.println("  " + ajustar(n.persona) + " <- " + n.contagiadoPor.persona);
+            }
+        }
+
+        System.out.println();
+        System.out.println("Ahora la Alcaldia publica un desmentido (alcance 2 pasos):");
+        GrafoSocial.ResultadoCorreccion r = g4.corregir(g4.buscar("Alcaldía"), 2);
+        System.out.println("  Corrigio a : " + conPersonas(r.corregidos) + "  -> " + r.corregidos.size());
+        System.out.println("  Siguen mal : " + conPersonas(r.siguenDesinformados) + "  -> " + r.siguenDesinformados.size());
+
+        System.out.println();
+        System.out.println("La mentira alcanzo " + g4.nodos.size() + " personas; el desmentido limpio "
+                + r.corregidos.size() + ".");
+        System.out.println("Comprobacion: el desmentido alcanza MENOS que la mentira -> "
+                + (r.corregidos.size() < g4.nodos.size() ? "OK" : "revisar"));
+        System.out.println("Los que siguen mal ya habian retransmitido el rumor: el desmentido les llego tarde.");
+
         imprimirTitulo("FIN");
-        System.out.println("Si los 7 casos imprimieron lo esperado, los tres algoritmos funcionan.");
+        System.out.println("Si los 8 casos imprimieron lo esperado, los algoritmos funcionan.");
+    }
+
+    /** "don Humberto, Wilson, Rosa" — la lista con los nombres de las personas. */
+    private static String conPersonas(List<NodoRed> nodos) {
+        if (nodos.isEmpty()) {
+            return "(nadie)";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < nodos.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(nodos.get(i).persona);
+        }
+        return sb.toString();
     }
 
     private static int contar(List<List<NodoRed>> oleadas) {

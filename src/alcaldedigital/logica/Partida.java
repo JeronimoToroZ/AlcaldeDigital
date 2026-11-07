@@ -25,6 +25,29 @@ public class Partida {
 
     public static final int SEGUNDOS_POR_TURNO = 30;
 
+    /**
+     * Cuantas verificaciones puede gastar el jugador en toda la partida.
+     *
+     * POR QUE ES LIMITADO: si verificar fuera gratis, la estrategia optima seria
+     * verificar todo y el jugador no aprenderia nada. En la vida real verificar
+     * cuesta tiempo, y por eso nadie verifica todo lo que ve. La habilidad que
+     * importa no es verificar: es saber QUE vale la pena verificar.
+     */
+    public static final int VERIFICACIONES_POR_PARTIDA = 3;
+
+    /** La confianza arranca a la mitad: ni heroe ni sospechoso. */
+    public static final int CONFIANZA_INICIAL = 50;
+
+    /**
+     * La confianza sube de a poco y baja de golpe.
+     *
+     * No es un numero caprichoso: asi funciona la reputacion de verdad. Hacer las
+     * cosas bien diez veces construye poco; difundir una mentira una sola vez
+     * destruye mucho. El jugador lo aprende sin que nadie se lo explique.
+     */
+    public static final int CONFIANZA_SUBE = 10;
+    public static final int CONFIANZA_BAJA = 25;
+
     private final List<Jugador> jugadores;
     private final EstadoCiudad ciudad;
     private final ArbolAVL feed;
@@ -37,11 +60,29 @@ public class Partida {
     private int indiceJugador;
     private final int totalTurnos;
 
+    /** Presupuesto de verificaciones que queda. */
+    private int verificacionesRestantes;
+    /** Confianza de la ciudad en el jugador, de 0 a 100. */
+    private int confianza;
+    /** Todo lo que decidio el jugador, para armar el informe final. */
+    private final List<DecisionTomada> decisiones;
+
     /**
      * Inicializa los componentes de la partida, valida la cantidad de jugadores,
      * genera el feed y lo distribuye entre el Árbol AVL y la cola de turnos pendientes.
      */
     public Partida(List<Jugador> jugadores, int publicacionesPorJugador) {
+        this(jugadores, publicacionesPorJugador, false);
+    }
+
+    /**
+     * @param conPistas true para jugar con las 12 publicaciones que traen cuenta,
+     *                  senales y explicacion; false para el feed antiguo.
+     *
+     * Con pistas, el numero de turnos lo decide el banco, no la cuenta de jugadores:
+     * las publicaciones son fijas y no se repiten.
+     */
+    public Partida(List<Jugador> jugadores, int publicacionesPorJugador, boolean conPistas) {
         if (jugadores == null || jugadores.size() < 2 || jugadores.size() > 4) {
             throw new IllegalArgumentException("La partida admite de 2 a 4 jugadores.");
         }
@@ -54,9 +95,19 @@ public class Partida {
         this.bitacora = new ArrayList<>();
         this.turno = 0;
         this.indiceJugador = 0;
-        this.totalTurnos = jugadores.size() * publicacionesPorJugador;
+        this.verificacionesRestantes = VERIFICACIONES_POR_PARTIDA;
+        this.confianza = CONFIANZA_INICIAL;
+        this.decisiones = new ArrayList<>();
 
-        for (Publicacion p : banco.generarFeed(totalTurnos)) {
+        int pedidas = jugadores.size() * publicacionesPorJugador;
+        List<Publicacion> generadas = conPistas
+                ? banco.generarFeedConPistas(pedidas)
+                : banco.generarFeed(pedidas);
+
+        // El total real puede ser menor que el pedido: el banco con pistas es finito.
+        this.totalTurnos = generadas.size();
+
+        for (Publicacion p : generadas) {
             feed.insertar(p);      // entra al AVL ordenada por credibilidad
             pendientes.addLast(p); // y a la cola de turnos
         }
@@ -110,6 +161,13 @@ public class Partida {
         Jugador jugador = jugadorActual();
         boolean fueVerificacion = (accion == Accion.VERIFICAR);
 
+        // Verificar cuesta: se descuenta del presupuesto de la partida.
+        boolean gastoVerificacion = false;
+        if (fueVerificacion && verificacionesRestantes > 0) {
+            verificacionesRestantes--;
+            gastoVerificacion = true;
+        }
+
         Efecto efecto = arbolDecision.resolver(accion, p.getTipo());
         efecto.aplicarSobre(ciudad, jugador.getRol(), fueVerificacion);
 
@@ -127,10 +185,25 @@ public class Partida {
             p.marcarRetirada();
         }
 
+        int confianzaAntes = confianza;
+        ajustarConfianza(accion, p);
+        boolean acerto = fueAcierto(accion, p);
+        decisiones.add(new DecisionTomada(p, accion, gastoVerificacion, acerto,
+                                          confianza - confianzaAntes));
+
         String ruta = arbolDecision.rutaDe(accion, p.getTipo());
         bitacora.add("T" + getTurno() + " " + jugador.getNombre() + " (" + jugador.getRol().getEtiqueta()
                 + ") -> " + accion.getEtiqueta() + " | " + efecto.getMensaje()
                 + " [" + efecto.resumenDeltas() + "] " + (puntos >= 0 ? "+" : "") + puntos + " pts");
+
+        if (gastoVerificacion) {
+            bitacora.add("Verificacion gastada. Quedan " + verificacionesRestantes + " de "
+                    + VERIFICACIONES_POR_PARTIDA + ".");
+        }
+        if (confianza != confianzaAntes) {
+            bitacora.add("Confianza de la ciudad: " + confianzaAntes + " -> " + confianza
+                    + " (" + (confianza > confianzaAntes ? "+" : "") + (confianza - confianzaAntes) + ")");
+        }
 
         String evento = null;
         turno++;
@@ -141,6 +214,120 @@ public class Partida {
         }
 
         return new ResultadoTurno(p, accion, efecto, puntos, reputacion, ruta, retirada, evento);
+    }
+
+    // ------------------------------------------------------------------
+    // Verificar cuesta
+    // ------------------------------------------------------------------
+
+    public int getVerificacionesRestantes() {
+        return verificacionesRestantes;
+    }
+
+    /** true si todavia queda presupuesto para verificar. La GUI apaga el boton si es false. */
+    public boolean puedeVerificar() {
+        return verificacionesRestantes > 0;
+    }
+
+    // ------------------------------------------------------------------
+    // Confianza: sube lento, baja rapido
+    // ------------------------------------------------------------------
+
+    public int getConfianza() {
+        return confianza;
+    }
+
+    /**
+     * Mueve la confianza segun lo que hizo el jugador.
+     *
+     * El unico movimiento grande es hacia abajo, y es por difundir una mentira.
+     * Reportar algo cierto tambien baja, menos: censurar informacion verdadera
+     * tambien hace dano, aunque la intencion sea buena.
+     */
+    private void ajustarConfianza(Accion accion, Publicacion p) {
+        int delta = 0;
+
+        switch (accion) {
+            case COMPARTIR:
+                delta = p.esFalsa() ? -CONFIANZA_BAJA : CONFIANZA_SUBE / 2;
+                break;
+            case VERIFICAR:
+                delta = CONFIANZA_SUBE;
+                break;
+            case REPORTAR:
+                delta = p.esFalsa() ? CONFIANZA_SUBE : -(CONFIANZA_BAJA / 2);
+                break;
+            case IGNORAR:
+            default:
+                delta = 0;   // no ayuda ni hace dano
+                break;
+        }
+
+        confianza = Math.max(0, Math.min(100, confianza + delta));
+    }
+
+    /**
+     * Si la decision fue la adecuada para esa publicacion.
+     *
+     * Hay exactamente dos errores: difundir una mentira y reportar algo cierto.
+     * Ignorar nunca es un error grave, pero tampoco ayuda.
+     */
+    private boolean fueAcierto(Accion accion, Publicacion p) {
+        if (accion == Accion.VERIFICAR) {
+            return true;                       // detenerse a mirar siempre es prudente
+        }
+        if (p.esFalsa()) {
+            return accion != Accion.COMPARTIR;
+        }
+        return accion != Accion.REPORTAR;
+    }
+
+    /** Todo lo que el jugador decidio, en orden. Es la materia prima del informe final. */
+    public List<DecisionTomada> getDecisiones() {
+        return java.util.Collections.unmodifiableList(decisiones);
+    }
+
+    /** Cuantas publicaciones falsas alcanzo a difundir el jugador. */
+    public int falsasCompartidas() {
+        int n = 0;
+        for (DecisionTomada d : decisiones) {
+            if (d.accion == Accion.COMPARTIR && d.publicacion.esFalsa()) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Cuantas decisiones fueron las adecuadas. */
+    public int totalAciertos() {
+        int n = 0;
+        for (DecisionTomada d : decisiones) {
+            if (d.acerto) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** Una decision del jugador, guardada para poder explicarsela al final. */
+    public static class DecisionTomada {
+        public final Publicacion publicacion;
+        public final Accion accion;
+        /** Si gasto una verificacion antes de decidir. */
+        public final boolean verifico;
+        /** Si la decision fue la adecuada para esa publicacion. */
+        public final boolean acerto;
+        /** Cuanto movio la confianza esta decision. */
+        public final int cambioConfianza;
+
+        public DecisionTomada(Publicacion publicacion, Accion accion,
+                              boolean verifico, boolean acerto, int cambioConfianza) {
+            this.publicacion = publicacion;
+            this.accion = accion;
+            this.verifico = verifico;
+            this.acerto = acerto;
+            this.cambioConfianza = cambioConfianza;
+        }
     }
 
     /** Se llama cuando al jugador se le acaba el tiempo: cuenta como IGNORAR con castigo. */
