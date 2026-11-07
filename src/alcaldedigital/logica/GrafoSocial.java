@@ -71,14 +71,14 @@ public class GrafoSocial {
      * por ese tramo.
      */
     public void inicializarMapaPrueba() {
-        NodoRed parque     = new NodoRed("Parque", 230, 215);
-        NodoRed hospital   = new NodoRed("Hospital", 460, 160);
-        NodoRed biblioteca = new NodoRed("Biblioteca", 655, 220);
-        NodoRed estacion   = new NodoRed("Estación", 250, 495);
-        NodoRed alcaldia   = new NodoRed("Alcaldía", 515, 550);
-        NodoRed teatro     = new NodoRed("Teatro", 770, 490);
-        NodoRed mercado    = new NodoRed("Mercado", 360, 750);
-        NodoRed cafe       = new NodoRed("Café", 705, 745);
+        NodoRed parque     = new NodoRed("Parque", "don Humberto", 230, 215);
+        NodoRed hospital   = new NodoRed("Hospital", "Yolanda", 460, 160);
+        NodoRed biblioteca = new NodoRed("Biblioteca", "Mía", 655, 220);
+        NodoRed estacion   = new NodoRed("Estación", "Wilson", 250, 495);
+        NodoRed alcaldia   = new NodoRed("Alcaldía", "Rosa", 515, 550);
+        NodoRed teatro     = new NodoRed("Teatro", "Nicolás", 770, 490);
+        NodoRed mercado    = new NodoRed("Mercado", "doña Carmen", 360, 750);
+        NodoRed cafe       = new NodoRed("Café", "Tatiana", 705, 745);
 
         agregarNodo(parque);
         agregarNodo(hospital);
@@ -166,22 +166,141 @@ public class GrafoSocial {
     public List<NodoRed> expandirUnaOleada() {
         Queue<NodoRed> frontera = new ArrayDeque<>(infectados());
         List<NodoRed> nuevos = new ArrayList<>();
-        Set<NodoRed> yaEnLaOleada = new HashSet<>();
+        Map<NodoRed, NodoRed> quienLoContagia = new HashMap<>();
 
         while (!frontera.isEmpty()) {
-            NodoRed actual = frontera.poll();
-            for (NodoRed vecino : actual.vecinos) {
-                if (!vecino.estaInfectado && !yaEnLaOleada.contains(vecino)) {
-                    yaEnLaOleada.add(vecino);
+            NodoRed emisor = frontera.poll();
+            for (NodoRed vecino : emisor.vecinos) {
+                // A quien ya escucho el desmentido no se le vuelve a vender
+                // el rumor: si no, curar a alguien no servia de nada porque la
+                // siguiente oleada lo reinfectaba.
+                if (!vecino.estaInfectado && !vecino.escuchoDesmentido
+                        && !quienLoContagia.containsKey(vecino)) {
+                    quienLoContagia.put(vecino, emisor);
                     nuevos.add(vecino);
                 }
             }
         }
 
         for (NodoRed n : nuevos) {
+            NodoRed emisor = quienLoContagia.get(n);
             n.estaInfectado = true;
+            n.contagiadoPor = emisor;
+            emisor.yaRetransmitio = true;   // ya lo conto: un desmentido le llega tarde
         }
         return nuevos;
+    }
+
+    // ------------------------------------------------------------------
+    // La correccion: por que desmentir nunca alcanza a todos
+    // ------------------------------------------------------------------
+
+    /** Lo que consiguio una campana de correccion, y lo que se le quedó por fuera. */
+    public static class ResultadoCorreccion {
+        /** Nodos que si alcanzo a limpiar. */
+        public final List<NodoRed> corregidos;
+        /** Nodos que siguen desinformados despues de la campana. */
+        public final List<NodoRed> siguenDesinformados;
+
+        public ResultadoCorreccion(List<NodoRed> corregidos, List<NodoRed> siguenDesinformados) {
+            this.corregidos = corregidos;
+            this.siguenDesinformados = siguenDesinformados;
+        }
+
+        @Override
+        public String toString() {
+            return "corrigio " + corregidos.size()
+                 + ", siguen desinformados " + siguenDesinformados.size();
+        }
+    }
+
+    /**
+     * BFS CON TOPE DE PROFUNDIDAD: publica un desmentido desde un nodo y lo deja
+     * viajar como maximo unos cuantos pasos.
+     *
+     * Es el mismo recorrido en anchura de la propagacion, con dos diferencias que
+     * son justamente la leccion del juego:
+     *
+     *   1. Se detiene a {@code alcanceMaximo} pasos del origen. Una mentira se
+     *      reenvia sola y llega lejos; un desmentido solo lo comparte quien se
+     *      toma el trabajo, y se apaga rapido.
+     *   2. No limpia a quien ya retransmitio el rumor. Esa persona ya se lo conto
+     *      a alguien mas, y ese contagio ya siguió camino.
+     *
+     * El recorrido SI pasa a traves de esos nodos para seguir avanzando; lo que no
+     * hace es deshacerles el contagio.
+     *
+     * Complejidad O(V + E) en el peor caso, menos cuando el tope corta antes.
+     *
+     * @param origen        desde donde se publica el desmentido
+     * @param alcanceMaximo cuantos pasos viaja (2 es un valor razonable)
+     * @return que alcanzo a corregir y que se quedó por fuera
+     */
+    public ResultadoCorreccion corregir(NodoRed origen, int alcanceMaximo) {
+        List<NodoRed> corregidos = new ArrayList<>();
+
+        if (origen != null && alcanceMaximo >= 0) {
+            Set<NodoRed> visitados = new HashSet<>();
+            Queue<NodoRed> cola = new ArrayDeque<>();
+
+            cola.add(origen);
+            visitados.add(origen);
+            int nivel = 0;
+
+            while (!cola.isEmpty() && nivel <= alcanceMaximo) {
+                int tamanoNivel = cola.size();
+
+                for (int i = 0; i < tamanoNivel; i++) {
+                    NodoRed actual = cola.poll();
+
+                    // Solo se limpia a quien todavia no ha pasado el rumor
+                    if (actual.estaInfectado && !actual.yaRetransmitio) {
+                        actual.estaInfectado = false;
+                        actual.contagiadoPor = null;
+                        actual.escuchoDesmentido = true;
+                        corregidos.add(actual);
+                    }
+
+                    if (nivel < alcanceMaximo) {
+                        for (NodoRed vecino : actual.vecinos) {
+                            if (visitados.add(vecino)) {
+                                cola.add(vecino);
+                            }
+                        }
+                    }
+                }
+                nivel++;
+            }
+        }
+
+        return new ResultadoCorreccion(corregidos, infectados());
+    }
+
+    /** Deja el grafo sin rumor: ni infectados, ni retransmisiones, ni atribucion. */
+    public void reiniciarPropagacion() {
+        for (NodoRed n : nodos) {
+            n.escuchoDesmentido = false;
+        }
+        for (NodoRed n : nodos) {
+            n.estaInfectado = false;
+            n.yaRetransmitio = false;
+            n.contagiadoPor = null;
+        }
+    }
+
+    /**
+     * La cadena de contagio de un nodo, desde el paciente cero hasta el.
+     * Sirve para el informe final: "a Tatiana le llego por Nicolas, que lo supo por Rosa".
+     */
+    public List<NodoRed> cadenaDeContagio(NodoRed nodo) {
+        List<NodoRed> cadena = new ArrayList<>();
+        Set<NodoRed> vistos = new HashSet<>();
+
+        for (NodoRed paso = nodo; paso != null && vistos.add(paso); paso = paso.contagiadoPor) {
+            cadena.add(paso);
+        }
+        Collections.reverse(cadena);
+        return cadena;
     }
 
     // ------------------------------------------------------------------
