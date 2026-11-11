@@ -3,9 +3,9 @@
   "configurations": [
     {
       "type": "java",
-      "name": "Jugar Alcalde Digital",
+      "name": "Jugar Influence, Inc.",
       "request": "launch",
-      "mainClass": "alcaldedigital.Main",
+      "mainClass": "influenceinc.Main",
       "classPaths": [
         "${workspaceFolder}/build/classes",
         "${workspaceFolder}/src"
