@@ -2710,7 +2710,7 @@ public class OficinaVista extends Lienzo {
                         switch (k) {
                             case 0: Tema.altoContraste = !Tema.altoContraste; break;
                             case 1: Tema.textoGrande = !Tema.textoGrande; break;
-                            case 2: Tema.sonido = !Tema.sonido; break;
+                            case 2: Tema.sonido = !Tema.sonido; Musica.refrescar(); break;
                             default: Tema.subtitulos = !Tema.subtitulos; break;
                         }
                     });

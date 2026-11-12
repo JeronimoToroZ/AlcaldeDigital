@@ -125,6 +125,7 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
         setContentPane(raiz);
         setGlassPane(cortina);
         cartas.show(raiz, "menu");
+        Musica.reproducir(Musica.Pista.MENU);
     }
 
     // ==================================================================
@@ -189,6 +190,12 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
         }
         cartaActual = carta;
         cartas.show(raiz, carta);
+
+        // La oficina tiene su propia pieza; el resto de pantallas comparten la
+        // del menu. Musica.reproducir no hace nada si ya suena esa misma, asi
+        // que pasar de config a sala no corta la musica a la mitad.
+        Musica.reproducir("oficina".equals(carta)
+                ? Musica.Pista.VENTANILLA : Musica.Pista.MENU);
         Component nuevo = visible();
         if (nuevo != null) {
             nuevo.requestFocusInWindow();

@@ -398,7 +398,7 @@ public class Portada extends Lienzo {
         switch (i) {
             case 0: Tema.altoContraste = !Tema.altoContraste; break;
             case 1: Tema.textoGrande = !Tema.textoGrande; break;
-            case 2: Tema.sonido = !Tema.sonido; break;
+            case 2: Tema.sonido = !Tema.sonido; Musica.refrescar(); break;
             case 3: Tema.subtitulos = !Tema.subtitulos; break;
             default: relajado = !relajado; break;
         }
