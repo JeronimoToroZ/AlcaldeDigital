@@ -25,8 +25,9 @@ public final class Caras {
         new Color(160, 60, 30), new Color(150, 150, 155)};
     static final Color[] OJOS = {new Color(70, 45, 25), new Color(40, 110, 170), new Color(60, 130, 70),
         new Color(30, 30, 30)};
-    static final Color[] ROPA = {new Color(60, 90, 160), new Color(170, 60, 60), new Color(60, 140, 100),
-        new Color(90, 90, 100), new Color(200, 160, 60), new Color(130, 80, 160), new Color(40, 40, 50)};
+    /** Ropa en la paleta del juego: cobre, lila, salvia, gris calido, dorado, rosa y madera. */
+    static final Color[] ROPA = {new Color(200, 105, 58), new Color(122, 92, 153), new Color(110, 158, 88),
+        new Color(140, 110, 100), new Color(222, 160, 80), new Color(196, 132, 120), new Color(74, 40, 28)};
 
     private Caras() {
     }
@@ -73,17 +74,17 @@ public final class Caras {
             c.lineTo(cx, cy + 165 * s);
             c.lineTo(cx - 11 * s, cy + 150 * s);
             c.closePath();
-            g.setColor(new Color(150, 30, 40));
+            g.setColor(new Color(192, 71, 58));
             g.fill(c);
             g.setColor(linea);
             g.draw(c);
         } else if (r.accesorio == 3) {   // carnet colgado
-            g.setColor(new Color(40, 90, 200));
+            g.setColor(new Color(122, 92, 153));
             g.drawLine((int) (cx - 26 * s), (int) (cy + 76 * s), (int) (cx - 10 * s), (int) (cy + 130 * s));
             g.drawLine((int) (cx + 26 * s), (int) (cy + 76 * s), (int) (cx + 10 * s), (int) (cy + 130 * s));
             g.setColor(Color.WHITE);
             g.fill(new RoundRectangle2D.Double(cx - 16 * s, cy + 128 * s, 32 * s, 40 * s, 6 * s, 6 * s));
-            g.setColor(new Color(40, 90, 200));
+            g.setColor(new Color(122, 92, 153));
             g.fill(new RoundRectangle2D.Double(cx - 16 * s, cy + 128 * s, 32 * s, 10 * s, 6 * s, 6 * s));
         }
 
@@ -144,7 +145,7 @@ public final class Caras {
                 }
                 break;
             case 5:     // gorra (los que no quieren que les vean la cara)
-                g.setColor(new Color(30, 30, 36));
+                g.setColor(new Color(74, 40, 28));
                 g.fill(new Arc2D.Double(cx - w / 2 - 4 * s, cy - h / 2 - 8 * s, w + 8 * s, h * 0.72, 0, 180, Arc2D.CHORD));
                 g.fill(new RoundRectangle2D.Double(cx - 10 * s, cy - h * 0.2, w * 0.75, 10 * s, 8 * s, 8 * s));
                 break;
@@ -244,7 +245,7 @@ public final class Caras {
         BufferedImage img = new BufferedImage(ancho, alto, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(new Color(190, 215, 235));
+        g.setColor(new Color(238, 214, 205));
         g.fillRect(0, 0, ancho, alto);
         double s = alto / 230.0;
         dibujar(g, r, ancho / 2.0, alto * 0.42, s, "neutral", false, 0);

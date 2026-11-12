@@ -1,5 +1,6 @@
 package influenceinc.logica;
 
+import influenceinc.modelo.RolJugador;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -27,11 +28,20 @@ public class Partida {
     private Jornada jornada;
 
     public Partida(Modo modo, List<String> nombres, long semilla, boolean relajado) {
+        this(modo, nombres, null, semilla, relajado);
+    }
+
+    /**
+     * @param roles el rol de cada jugador (en el mismo orden que los nombres);
+     *              si falta, juega como periodista.
+     */
+    public Partida(Modo modo, List<String> nombres, List<RolJugador> roles, long semilla, boolean relajado) {
         this.modo = modo;
         this.semilla = semilla;
         this.relajado = relajado;
-        for (String n : nombres) {
-            jugadores.add(new JugadorVerificador(n, semilla));
+        for (int i = 0; i < nombres.size(); i++) {
+            RolJugador r = roles != null && i < roles.size() ? roles.get(i) : RolJugador.PERIODISTA;
+            jugadores.add(new JugadorVerificador(nombres.get(i), r, semilla));
         }
         if (jugadores.isEmpty()) {
             jugadores.add(new JugadorVerificador("Verificador", semilla));

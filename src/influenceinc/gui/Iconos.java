@@ -16,9 +16,9 @@ import java.awt.geom.RoundRectangle2D;
  */
 public final class Iconos {
 
-    public static final Color ALERTA = new Color(255, 196, 70);
-    public static final Color OK = new Color(110, 235, 160);
-    public static final Color NO = new Color(255, 110, 100);
+    public static final Color ALERTA = new Color(242, 179, 94);
+    public static final Color OK = new Color(126, 176, 96);
+    public static final Color NO = new Color(214, 92, 74);
 
     private Iconos() {
     }
@@ -53,7 +53,7 @@ public final class Iconos {
                 p.closePath();
                 s.setColor(ALERTA);
                 s.fill(p);
-                s.setColor(Color.BLACK);
+                s.setColor(new Color(59, 34, 25));
                 s.setStroke(new BasicStroke((float) Math.max(1.4, r * 0.24)));
                 s.drawLine((int) cx, (int) (cy - r * 0.35), (int) cx, (int) (cy + r * 0.2));
                 s.fillRect((int) cx - 1, (int) (cy + r * 0.42), 2, 2);
@@ -80,7 +80,7 @@ public final class Iconos {
                     }
                 }
                 p.closePath();
-                s.setColor(new Color(255, 205, 70));
+                s.setColor(new Color(242, 179, 94));
                 s.fill(p);
                 break;
             }

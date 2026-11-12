@@ -162,7 +162,19 @@ public class CiudadEstado {
         conflictos = lim(conflictos + e.conflictos);
     }
 
-    static int lim(int v) {
+    /** Aplica una fraccion (k) de una hoja: el influencer amplifica sus decisiones. */
+    public void aplicarEscalado(EfectoCiudad e, double k) {
+        if (k <= 0) {
+            return;
+        }
+        verificada = lim(verificada + (int) Math.round(e.verificada * k));
+        confianza = lim(confianza + (int) Math.round(e.confianza * k));
+        convivencia = lim(convivencia + (int) Math.round(e.convivencia * k));
+        bienestar = lim(bienestar + (int) Math.round(e.bienestar * k));
+        conflictos = lim(conflictos + (int) Math.round(e.conflictos * k));
+    }
+
+    public static int lim(int v) {
         return Math.max(0, Math.min(100, v));
     }
 

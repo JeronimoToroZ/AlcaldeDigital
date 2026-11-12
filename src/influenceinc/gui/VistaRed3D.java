@@ -36,7 +36,7 @@ public class VistaRed3D {
         }
         Graphics2D gl = lienzo.createGraphics();
         gl.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        gl.setPaint(new GradientPaint(0, 0, new Color(6, 10, 26), 0, r.height, new Color(20, 10, 40)));
+        gl.setPaint(new GradientPaint(0, 0, new Color(34, 18, 14), 0, r.height, new Color(58, 30, 40)));
         gl.fillRect(0, 0, r.width, r.height);
 
         GrafoRed red = c.red;
@@ -80,15 +80,15 @@ public class VistaRed3D {
             }
         }
         escena.limpiar();
-        escena.agregarDisco(0, 0, 300, -2, new Color(20, 26, 60), new Color(60, 70, 130));
+        escena.agregarDisco(0, 0, 300, -2, new Color(60, 34, 26), new Color(140, 88, 64));
         for (Arista a : red.getAristas()) {
             double[] p = pos.get(a.origen), q = pos.get(a.destino);
             if (p == null || q == null) {
                 continue;
             }
             boolean caliente = a.origen == origen || (ola1.contains(a.origen) && ola2.contains(a.destino));
-            Color col = caliente ? new Color(255, 190, 60) : a.origen.tipo == TipoCuenta.BOT
-                    ? new Color(220, 60, 70, 120) : new Color(110, 130, 200, 70);
+            Color col = caliente ? new Color(242, 179, 94) : a.origen.tipo == TipoCuenta.BOT
+                    ? new Color(192, 71, 58, 120) : new Color(196, 178, 214, 70);
             escena.agregar(new Escena.Linea(p[0], p[1], p[2], q[0], q[1], q[2], col, caliente ? 2.2f : 1f));
         }
         for (Map.Entry<Vertice, double[]> en : pos.entrySet()) {
@@ -97,11 +97,11 @@ public class VistaRed3D {
             Color col;
             double rad = 7;
             switch (v.tipo) {
-                case BOT: col = new Color(225, 50, 60); rad = 9; break;
-                case INFLUENCER: col = new Color(230, 159, 0); rad = 11; break;
-                case MEDIO: col = new Color(86, 180, 233); rad = 12; break;
-                case AGENCIA: col = new Color(204, 121, 167); rad = 14; break;
-                default: col = v.desinformado ? new Color(150, 90, 90) : new Color(120, 200, 170); break;
+                case BOT: col = new Color(192, 71, 58); rad = 9; break;
+                case INFLUENCER: col = new Color(122, 92, 153); rad = 11; break;
+                case MEDIO: col = new Color(242, 179, 94); rad = 12; break;
+                case AGENCIA: col = new Color(200, 105, 58); rad = 14; break;
+                default: col = v.desinformado ? new Color(150, 90, 90) : new Color(126, 176, 96); break;
             }
             Escena.Esfera e = new Escena.Esfera(p[0], p[1], p[2], rad, col);
             e.marcaX = v.desinformado || v.tipo == TipoCuenta.BOT;
@@ -111,9 +111,9 @@ public class VistaRed3D {
                 e.etiqueta = "ORIGEN";
                 e.etiquetaSiempre = true;
             } else if (ola1.contains(v)) {
-                e.anillo = new Color(255, 200, 60);
+                e.anillo = new Color(242, 179, 94);
             } else if (ola2.contains(v)) {
-                e.anillo = new Color(255, 200, 60, 120);
+                e.anillo = new Color(242, 179, 94, 120);
                 e.anilloPunteado = true;
             }
             if (v.tipo == TipoCuenta.AGENCIA) {

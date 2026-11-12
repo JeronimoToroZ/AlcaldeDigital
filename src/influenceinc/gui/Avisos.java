@@ -28,6 +28,12 @@ public class Avisos implements Sonido.Subtitulos {
     }
 
     private static final long DURACION = 7000;
+    /** Si es >= 0, la linea de subtitulos se dibuja en esta y (si no, abajo del panel). */
+    public int subtituloY = -1;
+    /** true = los avisos se apilan hacia ARRIBA desde y (asi no tapan la ventana de interrogatorio). */
+    public boolean haciaArriba;
+    /** Cuantos avisos se ven a la vez. */
+    public int maxVisibles = 4;
     private final List<Aviso> lista = new ArrayList<>();
     private String subtitulo = "";
     private long subtituloDesde;
@@ -56,7 +62,7 @@ public class Avisos implements Sonido.Subtitulos {
         Font ft = Tema.fuente(Font.BOLD, 14);
         Font fx = Tema.fuente(Font.PLAIN, 12.5f);
         int visibles = 0;
-        for (int i = lista.size() - 1; i >= 0 && visibles < 4; i--) {
+        for (int i = lista.size() - 1; i >= 0 && visibles < maxVisibles; i--) {
             Aviso a = lista.get(i);
             long edad = ahora - a.inicio;
             if (edad < 0) {
@@ -67,11 +73,14 @@ public class Avisos implements Sonido.Subtitulos {
             List<String> lineas = partir(g, fx, a.texto, anchoMax - 24);
             int alto = 30 + lineas.size() * 16;
             int desliz = edad < 250 ? (int) ((1 - edad / 250.0) * -30) : 0;
-            g.setColor(new Color(8, 10, 26, (int) (215 * alfa)));
+            if (haciaArriba) {
+                yy -= alto;
+            }
+            g.setColor(new Color(42, 23, 18, (int) (232 * alfa)));
             if (Tema.altoContraste) {
                 g.setColor(new Color(0, 0, 0, (int) (255 * alfa)));
             }
-            g.fillRoundRect(x + desliz, yy, anchoMax, alto, 14, 14);
+            g.fillRoundRect(x + desliz, yy, anchoMax, alto, 16, 16);
             Color c = a.color;
             g.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), (int) (255 * alfa)));
             g.fillRoundRect(x + desliz, yy, 5, alto, 4, 4);
@@ -86,17 +95,17 @@ public class Avisos implements Sonido.Subtitulos {
                 g.drawString(l, x + desliz + 14, ly);
                 ly += 16;
             }
-            yy += alto + 8;
+            yy += haciaArriba ? -8 : alto + 8;
         }
         if (Tema.subtitulos && ahora - subtituloDesde < 2600 && !subtitulo.isEmpty()) {
             g.setFont(Tema.fuente(Font.BOLD, 13));
             FontMetrics fm = g.getFontMetrics();
             int w = fm.stringWidth(subtitulo) + 20;
             int sx = (anchoPanel - w) / 2;
-            int sy = altoPanel - 46;
-            g.setColor(new Color(0, 0, 0, 200));
-            g.fillRoundRect(sx, sy, w, 26, 10, 10);
-            g.setColor(Tema.altoContraste ? Color.YELLOW : new Color(255, 236, 160));
+            int sy = subtituloY >= 0 ? subtituloY : altoPanel - 46;
+            g.setColor(new Color(42, 23, 18, 220));
+            g.fillRoundRect(sx, sy, w, 26, 13, 13);
+            g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.DORADO);
             g.drawString(subtitulo, sx + 10, sy + 18);
         }
     }

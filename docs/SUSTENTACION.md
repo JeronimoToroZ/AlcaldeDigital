@@ -1,4 +1,4 @@
-# Influence, Inc.: Mesa de Verificación. Guía de sustentación
+# Alcalde Digital (agencia Influence, Inc.): Mesa de Verificación. Guía de sustentación
 
 **Universidad del Norte, Estructura de Datos II, 2026.** Java puro, sin librerías externas.
 
@@ -182,3 +182,71 @@ Preguntar "¿y la fuente?" antes de compartir, desconfiar de lo urgente y de las
 recién creadas, distinguir opinión de hecho y publicidad de opinión, y entender que una
 foto real puede ser vieja. También que **rechazar lo cierto también hace daño** y que a veces
 hay que decir que no aunque la presión venga de arriba (el caso del jefe).
+
+---
+
+## 9. Versión 2: roles, interfaz nueva y mecánicas interactivas
+
+### 9.1 Jugadores, nombres y roles (`gui/Configuracion.java`, `modelo/RolJugador.java`)
+Antes de CUALQUIER partida (solo, local o en red) el juego pide el **nombre** y el **rol** de cada
+jugador. No deja empezar hasta que todos tengan nombre y rol, y en la partida local cada rol es de un
+solo jugador. En red, la sala muestra a cada uno como "Ana (Periodista)".
+
+| Rol | Herramientas del monitor | Habilidad única (mecánica interactiva) | Estructura que usa |
+|---|---|---|---|
+| Ciudadano | Perfil, Lupa, Búsqueda inversa | **¿Quién te lo mandó?**: sube por la cadena de reenvíos escogiendo, en cada paso, a quien tiene la misma huella y lo compartió antes, hasta el origen | Árbol BFS (padres) del grafo social |
+| Periodista | Las 6 (corresponsal, escáner de red y llamadas son solo suyos) | **Investigación completa** (lo de antes) | Dijkstra, BFS/DFS, AVL |
+| Influencer | Perfil, Búsqueda inversa, Escáner de red | **Cazabots**: 12 s para marcar solo las cuentas falsas que aparecen; además sus decisiones pesan x1,5 | 2 oleadas del BFS desde el origen |
+| Candidato | Perfil, Directorio, Lupa | **Rueda de prensa**: 3 preguntas de 10 s; se ARRASTRA la respuesta al micrófono; suma o resta confianza, conflictos e intención de voto | Indicadores de la ciudad + AVL |
+
+Si la habilidad sale bien y el caso es sospechoso, se **INSERTA** una confrontación en el árbol de
+diálogo (igual que las herramientas). Todo está en `logica/Habilidades.java` y `Jornada.terminarHabilidad()`.
+
+### 9.2 Otras mecánicas interactivas
+- **Sellos arrastrables**: VERIFICADO (antes publicar), OPINIÓN, #PUBLICIDAD, RECHAZAR y REPORTAR (antes
+  denunciar). Se toma el sello y se suelta sobre la publicación del celular (teclas Z X C V B siguen sirviendo).
+- **Preguntas arrastrables**: se arrastra la tarjeta hacia el visitante (clic o teclas 1-5 también).
+- **Lupa interactiva**: se hace clic en la zona de la foto donde está la diferencia (pelo, cejas, ojos/gafas, lunar).
+- **Alerta viral** (sección 9 del enunciado): cuando ocurre el evento viral aparece una publicación con
+  10 segundos para arrastrar VERIFICAR / REPORTAR / IGNORAR o compartirla. Puede ser verdadera o falsa.
+- **Billetera**: solo aparece en la ventana si el visitante trae credencial.
+
+### 9.3 Interfaz
+- Paleta única tomada de la portada (madera, cobre, crema, rosa, lila, salvia, ladrillo) en `gui/Tema.java`.
+- Tipografía única **Poppins** (licencia OFL) cargada desde `recursos/`.
+- Todas las pantallas son lienzos escalables (`gui/Lienzo.java`): caben en cualquier tamaño de ventana.
+- Transiciones suaves entre pantallas (desvanecido + acercamiento) en `VentanaPrincipal`.
+- Barra superior con 4 botones de imagen en todas las pantallas y roles: **ayuda** (objetivo, tu rol,
+  cómo se juega, botones, roles, indicadores, cómo ganar, reglas, estructuras), **estructura**, **mapa**
+  (el grafo de la ciudad, que antes estaba abajo a la derecha) y **pausa**.
+- Ventana de interrogatorio con cielo que cambia con la hora (mañana, tarde, noche con luna y estrellas).
+- La noticia se ve dentro del **celular** con el usuario y una ilustración alusiva.
+- Elección del alcalde al final: si hay jugadores candidatos, compiten con dos rivales de la ciudad; su
+  intención de voto sale de la confianza, la información verificada, los conflictos y sus ruedas de prensa.
+
+### 9.4 Pruebas
+`pruebas/PruebaRoles.java` comprueba herramientas por rol, la cadena del ciudadano (una sola opción
+correcta por paso), el x1,5 del influencer, la rueda de prensa y la alerta viral.
+
+---
+
+## 10. Versión 3: ajustes de ritmo, validación y tienda
+
+- **Máximo 3 personas por día** (`Historia.MAX_CASOS_DIA`): 15 casos en la semana. Se conservaron los
+  casos clave de la historia (impostora del Acueducto, foto vieja, soborno de $500, deepfake del jefe) y
+  los demás quedan como reserva en `Historia.casosDeReserva()`.
+- **Herramientas que se reinician con cada cliente** (`Jornada.reiniciarHerramientas()`): lupa,
+  directorio, llamada, corresponsal y red quedan disponibles otra vez cuando pasa la siguiente persona.
+- **Validación de herramientas** (`Jornada.motivoNoAplica()`): si el caso no permite una herramienta
+  (lupa sin credencial, directorio sin cuenta, búsqueda inversa sin foto, corresponsal sin barrio, red sin
+  origen), la pestaña sale deshabilitada con una X roja y, si se intenta usar, aparece un **aviso flotante
+  rojo** que explica por qué. No gasta minutos.
+- **Indicadores dentro del botón MAPA**: verificada, confianza, convivencia, bienestar, desinformación y
+  conflictos se consultan ahí (con la salud de la ciudad en la insignia del botón). La pantalla principal
+  queda más limpia y la libreta de pistas es más grande.
+- **Credenciales** con el diseño unificado: papel crema, franja de cobre, emblema de Ciudad Nova y Poppins.
+- **Tienda** (`logica/Tienda.java`, botón con la bolsa o tecla S): café (pausa el reloj), horas extra,
+  pista del informante, recarga de habilidad, lupa de alta precisión, seguro de reputación (anula una
+  advertencia) y la campaña "Piensa antes de compartir" (baja la desinformación). Convierte el dinero
+  ganado en ventaja: es un elemento motivador (sección 17 del enunciado).
+- `PruebaRoles` ahora también prueba el reinicio de herramientas, la validación y la tienda.

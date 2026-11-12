@@ -1,0 +1,7 @@
+Tipografía del juego: Poppins (Regular, Italic, Medium, Bold, BoldItalic).
+Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins).
+Se distribuye bajo la SIL Open Font License, versión 1.1 (https://openfontlicense.org).
+Puede usarse, incluirse y redistribuirse libremente junto con el juego.
+
+Las imágenes (fondo, fondo2, ayuda, estructura, pausa, mapa, billetera, celular,
+celular2 y los sellos) son las entregadas por el equipo, redimensionadas para el juego.

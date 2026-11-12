@@ -11,6 +11,7 @@ import influenceinc.modelo.EfectoCiudad;
 import influenceinc.modelo.Herramienta;
 import influenceinc.modelo.Persona;
 import influenceinc.modelo.Publicacion;
+import influenceinc.modelo.RolJugador;
 import influenceinc.modelo.Senal;
 import influenceinc.modelo.TipoCuenta;
 import influenceinc.modelo.Veredicto;
@@ -63,7 +64,7 @@ public class Jornada {
         public EfectoCiudad efecto;
         public String titular;
         public int puntos, dinero, alcance, corregidos;
-        public boolean advertencia, despedido, bonoRapidez;
+        public boolean advertencia, despedido, bonoRapidez, seguroUsado;
         public GrafoRed.ResultadoPropagacion propagacion;
         public List<String> logrosNuevos = new ArrayList<>();
     }
@@ -94,6 +95,8 @@ public class Jornada {
     private int puntosDia, aciertosDia, erroresDia;
     private final List<String> titulares = new ArrayList<>();
     public final List<String> cambiosDeReglas;
+    /** Alerta viral pendiente de decision (la vista la muestra con cuenta regresiva). */
+    private Habilidades.Viral viralPendiente;
 
     public Jornada(int dia, JugadorVerificador jugador, long semilla, boolean relajado) {
         this.dia = dia;
@@ -162,6 +165,7 @@ public class Jornada {
                 break;
             case VIRAL:
                 jugador.ciudad.ajustarDesinformacion(4);
+                viralPendiente = Habilidades.viral(azar);
                 break;
             default:
                 prisaHasta = minuto + 60;
@@ -221,11 +225,30 @@ public class Jornada {
         minutoInicioCaso = minuto;
         contradicciones = 0;
         usadasEnCaso.clear();
+        reiniciarHerramientas();
+        return actual;
+    }
+
+    /**
+     * Cada vez que llega un cliente nuevo, TODAS las herramientas quedan
+     * disponibles otra vez: lupa, directorio, llamada, corresponsal, red...
+     * (los resultados se guardan en cada Caso, asi que el nuevo empieza limpio).
+     */
+    private void reiniciarHerramientas() {
+        usadasEnCaso.clear();
         corresponsalLlega = -1;
+        salidaCorresponsal = 0;
         rutaCorresponsal = null;
         llamo = false;
         reporteRecibido = false;
-        return actual;
+        if (actual != null) {
+            actual.resultados.clear();
+        }
+    }
+
+    /** Herramientas usadas con el cliente actual (se vacia con cada cliente nuevo). */
+    public int usadasConEsteCliente() {
+        return usadasEnCaso.size();
     }
 
     public int enFila() {
@@ -321,7 +344,50 @@ public class Jornada {
     // ==================================================================
 
     public boolean disponible(Herramienta h) {
-        return h.dia <= dia && !enApagon();
+        return h.dia <= dia && !enApagon() && jugador.rol.puedeUsar(h);
+    }
+
+    /** true si el ROL del jugador incluye esta herramienta (aunque todavia no sea su dia). */
+    public boolean delRol(Herramienta h) {
+        return jugador.rol.puedeUsar(h);
+    }
+
+    /**
+     * VALIDACION: por que NO se puede usar una herramienta ahora mismo (null = si se puede).
+     * Mira el rol, el dia, el apagon y si el caso ACTUAL la necesita
+     * (la lupa sin credencial, el directorio sin cuenta, la busqueda inversa sin foto...).
+     */
+    public String motivoNoAplica(Herramienta h) {
+        if (!jugador.rol.puedeUsar(h)) {
+            return "Tu rol (" + jugador.rol.nombre + ") no usa " + h.nombre.toLowerCase() + ".";
+        }
+        if (h.dia > dia) {
+            return h.nombre + " llega el día " + h.dia + ".";
+        }
+        if (enApagon()) {
+            return "¡Apagón! Sin energía no funciona " + h.nombre.toLowerCase() + ".";
+        }
+        if (actual == null) {
+            return "No hay nadie en la ventanilla.";
+        }
+        switch (h) {
+            case LUPA:
+                return actual.visitante.credencial == null
+                        ? "Este visitante no trae credencial: no hay foto que comparar con la lupa." : null;
+            case DIRECTORIO:
+                return actual.pub.getCuenta() == null
+                        ? "La publicación no sale de ninguna cuenta: no hay nada que buscar en el directorio." : null;
+            case IMAGEN:
+                return actual.pub.getImagen() == null && (actual.imagen == null || actual.imagen.startsWith("La publicación no"))
+                        ? "La publicación no trae foto ni video: la búsqueda inversa no aplica." : null;
+            case CORRESPONSAL:
+                return actual.zona == 1 ? "La noticia no habla de ningún barrio: no hay a dónde enviar al corresponsal." : null;
+            case RED:
+                return actual.origen == null || !jugador.ciudad.red.contiene(actual.origen.id)
+                        ? "El origen de esta publicación ya no está en la red social." : null;
+            default:
+                return null;
+        }
     }
 
     public List<String> usar(Herramienta h) {
@@ -329,8 +395,15 @@ public class Jornada {
         if (actual == null) {
             return r;
         }
+        String no = motivoNoAplica(h);
+        if (no != null && disponible(h)) {
+            // no aplica a ESTE caso: no gasta tiempo y no se bloquea para el siguiente
+            r.add("[x] " + no);
+            return r;
+        }
         if (!disponible(h)) {
-            r.add(enApagon() ? "Sin energía. Espera a que vuelva la luz." : "Esta herramienta llega el día " + h.dia + ".");
+            r.add(!jugador.rol.puedeUsar(h) ? "Tu rol (" + jugador.rol.nombre + ") no usa esta herramienta."
+                    : enApagon() ? "Sin energía. Espera a que vuelva la luz." : "Esta herramienta llega el día " + h.dia + ".");
             return r;
         }
         usadasEnCaso.add(h);
@@ -425,7 +498,7 @@ public class Jornada {
 
     /** true si el directorio permite llamar a la institucion de este caso. */
     public boolean puedeLlamar() {
-        return actual != null && dia >= 2 && !llamo && !enApagon();
+        return actual != null && dia >= 2 && !llamo && !enApagon() && jugador.rol.puedeUsar(Herramienta.DIRECTORIO);
     }
 
     public String llamar() {
@@ -521,7 +594,7 @@ public class Jornada {
         StringBuilder sb = new StringBuilder();
         for (GrafoCiudad.Zona z : rutaCorresponsal) {
             if (sb.length() > 0) {
-                sb.append(" → ");
+                sb.append(" › ");
             }
             sb.append(z.nombre);
         }
@@ -665,6 +738,14 @@ public class Jornada {
         if (c.pago > 0 && (v == Veredicto.PUBLICAR || v == Veredicto.OPINION)) {
             res.dinero += c.pago;                       // aceptaste la plata
         }
+        // INFLUENCER: su alcance es enorme, asi que sus decisiones pesan x1,5 (en puntos y en la ciudad)
+        if (jugador.rol == RolJugador.INFLUENCER) {
+            res.puntos = (int) Math.round(res.puntos * jugador.rol.impacto());
+            ciudad.aplicarEscalado(e, jugador.rol.impacto() - 1);
+            if (v == Veredicto.PUBLICAR || v == Veredicto.OPINION || v == Veredicto.ETIQUETA) {
+                ciudad.ajustarDesinformacion(bulo ? 3 : -1);
+            }
+        }
         jugador.puntos += res.puntos;
         jugador.dinero += res.dinero;
         jugador.reputacion = CiudadEstado.lim(jugador.reputacion + e.reputacion);
@@ -680,9 +761,14 @@ public class Jornada {
             erroresDia++;
         }
         if (e.grave) {
-            jugador.advertir();
-            res.advertencia = true;
-            res.despedido = jugador.despedido;
+            if (jugador.seguros > 0) {
+                jugador.seguros--;            // TIENDA: el seguro de reputacion absorbe la advertencia
+                res.seguroUsado = true;
+            } else {
+                jugador.advertir();
+                res.advertencia = true;
+                res.despedido = jugador.despedido;
+            }
         }
         puntosDia += res.puntos;
 
@@ -709,7 +795,7 @@ public class Jornada {
             res.titular = e.explicacion;
         }
         titulares.add(res.titular);
-        jugador.bitacora.add("Día " + dia + " · " + c.visitante.nombre + " → " + v.sello
+        jugador.bitacora.add("Día " + dia + " · " + c.visitante.nombre + " › " + v.sello
                 + (e.acierto ? " [ok]" : " [x] (era: " + c.correcto.sello + ")"));
         atendidos.add(c);
         resultados.add(res);
@@ -718,6 +804,237 @@ public class Jornada {
             cerrar();
         }
         return res;
+    }
+
+    // ==================================================================
+    // Habilidad unica del rol
+    // ==================================================================
+
+    /** true si el jugador puede usar su habilidad con el caso actual (una vez por caso). */
+    public boolean puedeUsarHabilidad() {
+        return actual != null && jugador.rol.tieneMiniJuego() && !actual.habilidadUsada;
+    }
+
+    /** CIUDADANO: la cadena de reenvios del caso actual (camino del arbol BFS en el grafo social). */
+    public Habilidades.Cadena prepararCadena() {
+        return Habilidades.cadena(actual == null ? null : actual.origen, jugador.ciudad.red, jugador.ciudad.usuarios, azar);
+    }
+
+    /** INFLUENCER: los perfiles de las primeras oleadas (BFS) desde el origen. */
+    public List<Habilidades.Perfil> prepararPerfiles() {
+        return Habilidades.perfiles(actual == null ? null : actual.origen, jugador.ciudad.red, jugador.ciudad.usuarios, azar);
+    }
+
+    /** CANDIDATO: las 3 preguntas de la rueda de prensa. */
+    public List<Habilidades.Pregunta> prepararRueda() {
+        return Habilidades.ruedaDePrensa(azar);
+    }
+
+    /**
+     * Cierra el mini-juego de la habilidad: gasta minutos de juego, anota las
+     * pistas en la libreta y, si salio bien y el caso es sospechoso, INSERTA
+     * una confrontacion en el arbol de dialogo (igual que las herramientas).
+     */
+    public List<String> terminarHabilidad(boolean exito, int minutos) {
+        List<String> pistas = new ArrayList<>();
+        if (actual == null) {
+            return pistas;
+        }
+        actual.habilidadUsada = true;
+        jugador.habilidadesUsadas++;
+        gastar(minutos);
+        Caso c = actual;
+        switch (jugador.rol) {
+            case CIUDADANO: {
+                Vertice o = c.origen;
+                String tipo = o == null ? "desconocido" : o.tipo.getEtiqueta();
+                if (exito) {
+                    if (o != null && o.tipo == TipoCuenta.BOT) {
+                        pistas.add("[!] La cadena empieza en una cuenta falsa: " + o.nombre + ".");
+                        insertarConfrontacion("Rastreé la cadena y empieza en una cuenta falsa.", true);
+                    } else if (o != null && o.tipo == TipoCuenta.MEDIO) {
+                        pistas.add("[ok] La cadena empieza en un medio reconocido (" + o.nombre + ").");
+                    } else if (o != null && o.tipo == TipoCuenta.INFLUENCER) {
+                        pistas.add("[!] La cadena empieza en un influencer: " + o.nombre + ". ¿Le pagaron?");
+                        if (c.verdad == Verdad.PUBLICIDAD_OCULTA) {
+                            insertarConfrontacion("Rastreé la cadena: empieza en un influencer pagado.", true);
+                        }
+                    } else {
+                        pistas.add("Cadena rastreada: empezó en una persona común (" + tipo + "), no en una fuente oficial.");
+                    }
+                } else {
+                    pistas.add("Te perdiste en la cadena de reenvíos: no encontraste el origen.");
+                }
+                break;
+            }
+            case INFLUENCER: {
+                Vertice o = c.origen;
+                int bots = 0, total = 0;
+                if (o != null && jugador.ciudad.red.contiene(o.id)) {
+                    List<List<Vertice>> ol = jugador.ciudad.red.bfsOleadas(o, 2);
+                    for (int k = 1; k < ol.size(); k++) {
+                        for (Vertice v : ol.get(k)) {
+                            total++;
+                            bots += v.tipo == TipoCuenta.BOT ? 1 : 0;
+                        }
+                    }
+                }
+                int pct = total == 0 ? 0 : 100 * bots / total;
+                if (exito) {
+                    jugador.ciudad.ajustarDesinformacion(-2);     // bloqueaste las cuentas falsas que viste
+                    if (o != null && o.tipo == TipoCuenta.BOT) {
+                        pistas.add("[!] Cazabots: el " + pct + " % de quienes la empujan son cuentas falsas.");
+                        insertarConfrontacion("Lo que trae lo están empujando cuentas falsas.", true);
+                    } else {
+                        pistas.add("[ok] Cazabots: la difusión la mueve gente real (" + pct + " % de cuentas falsas).");
+                    }
+                } else {
+                    pistas.add("Cazabots: marcaste cuentas reales o se te escaparon los bots.");
+                }
+                break;
+            }
+            case CANDIDATO: {
+                if (exito) {
+                    String p = Habilidades.pistaPrensa(c.verdad);
+                    pistas.add(p);
+                    if (c.sospechoso() || c.verdad == Verdad.PUBLICIDAD_OCULTA) {
+                        insertarConfrontacion(c.verdad == Verdad.PUBLICIDAD_OCULTA
+                                ? "En la rueda de prensa dicen que a usted le pagan." : "En la rueda de prensa me dijeron que eso ya fue desmentido.", true);
+                    }
+                } else {
+                    pistas.add("La rueda de prensa se desordenó: no sacaste nada en claro.");
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        if (exito) {
+            jugador.habilidadesBien++;
+            jugador.reputacion = CiudadEstado.lim(jugador.reputacion + 1);
+            if (jugador.habilidadesBien == 3) {
+                jugador.logros.add("Maestría de " + jugador.rol.nombre + ": 3 habilidades bien resueltas");
+            }
+        }
+        c.pistasHabilidad.addAll(pistas);
+        return pistas;
+    }
+
+    /**
+     * Efecto de UNA respuesta en la rueda de prensa del candidato.
+     * R responsable, A ataque, M repite un rumor, E evasiva (o se acabo el tiempo).
+     */
+    public void respuestaPrensa(char tipo) {
+        CiudadEstado ci = jugador.ciudad;
+        switch (tipo) {
+            case 'R':
+                ci.confianza = CiudadEstado.lim(ci.confianza + 2);
+                jugador.apoyo += 3;
+                break;
+            case 'A':
+                ci.conflictos = CiudadEstado.lim(ci.conflictos + 3);
+                ci.convivencia = CiudadEstado.lim(ci.convivencia - 2);
+                jugador.apoyo -= 1;
+                break;
+            case 'M':
+                ci.ajustarDesinformacion(2);
+                jugador.apoyo -= 2;
+                break;
+            default:
+                ci.confianza = CiudadEstado.lim(ci.confianza - 1);
+                break;
+        }
+    }
+
+    // ==================================================================
+    // Alerta viral (decision con 10 segundos)
+    // ==================================================================
+
+    /** La alerta viral que acaba de aparecer (una sola vez). */
+    public Habilidades.Viral tomarViral() {
+        Habilidades.Viral v = viralPendiente;
+        viralPendiente = null;
+        return v;
+    }
+
+    /**
+     * Resuelve la alerta viral. opcion: 0 verificar, 1 reportar, 2 ignorar
+     * (o se acabo el tiempo), 3 compartir.
+     * @return {puntos, acierto(1/0)} y el texto de la consecuencia en msg[0]
+     */
+    public int[] resolverViral(Habilidades.Viral v, int opcion, String[] msg) {
+        CiudadEstado ci = jugador.ciudad;
+        int pts;
+        boolean ok;
+        if (v.verdadera) {
+            switch (opcion) {
+                case 0: ci.ajustarDesinformacion(-4); ci.verificada = CiudadEstado.lim(ci.verificada + 2);
+                    pts = 40; ok = true; msg[0] = "Verificaste: era cierto y de una cuenta oficial. La información correcta circula."; break;
+                case 3: ci.ajustarDesinformacion(-3); pts = 20; ok = true;
+                    msg[0] = "Compartiste un dato cierto de una cuenta oficial. Bien, aunque verificar primero es mejor."; break;
+                case 1: ci.confianza = CiudadEstado.lim(ci.confianza - 3); pts = -30; ok = false;
+                    msg[0] = "Reportaste una información verdadera y oficial: eso también hace daño."; break;
+                default: pts = 0; ok = false; msg[0] = "Lo dejaste pasar. Era cierto, pero el rumor viral siguió su curso."; break;
+            }
+        } else {
+            switch (opcion) {
+                case 0: ci.ajustarDesinformacion(-5); ci.verificada = CiudadEstado.lim(ci.verificada + 2);
+                    pts = 40; ok = true; msg[0] = "Verificaste antes de compartir: era falso y frenaste su avance."; break;
+                case 1: ci.ajustarDesinformacion(-6); ci.convivencia = CiudadEstado.lim(ci.convivencia + 1);
+                    pts = 50; ok = true; msg[0] = "Reportaste un bulo: Civitas lo marcó como falso."; break;
+                case 3: ci.ajustarDesinformacion(3); ci.conflictos = CiudadEstado.lim(ci.conflictos + 3);
+                    pts = -50; ok = false; msg[0] = "Compartiste un bulo: llegó a más gente y causó discusiones."; break;
+                default: pts = 0; ok = false; msg[0] = "No hiciste nada y el bulo siguió volviéndose viral."; break;
+            }
+        }
+        if (jugador.rol == RolJugador.INFLUENCER) {
+            pts = (int) Math.round(pts * jugador.rol.impacto());
+        }
+        jugador.puntos += pts;
+        puntosDia += pts;
+        if (ok) {
+            jugador.viralesBien++;
+            if (jugador.viralesBien == 2) {
+                jugador.logros.add("Antiviral: frenaste 2 alertas virales a tiempo");
+            }
+        } else {
+            jugador.viralesMal++;
+        }
+        return new int[]{pts, ok ? 1 : 0};
+    }
+
+    // ==================================================================
+    // Para la tienda
+    // ==================================================================
+
+    /** Detiene el reloj unos segundos (cafe). */
+    public void pausar(double segundos) {
+        pausaSeg += segundos;
+    }
+
+    /** Devuelve minutos al reloj (horas extra). */
+    public void devolverMinutos(int minutos) {
+        minuto = Math.max(INICIO, minuto - minutos);
+    }
+
+    /** Permite volver a usar la habilidad con el cliente actual. */
+    public boolean recargarHabilidad() {
+        if (actual == null || !actual.habilidadUsada || !jugador.rol.tieneMiniJuego()) {
+            return false;
+        }
+        actual.habilidadUsada = false;
+        return true;
+    }
+
+    /** Pista del informante: lo que el caso ES, dicho de forma indirecta. */
+    public String pistaInformante() {
+        if (actual == null) {
+            return null;
+        }
+        String p = "Informante: " + Habilidades.pistaPrensa(actual.verdad).replaceFirst("^\\[[^\\]]*\\]\\s*", "");
+        String marca = actual.sospechoso() || actual.verdad == Verdad.PUBLICIDAD_OCULTA ? "[!] " : actual.verdad == Verdad.VERDADERA ? "[ok] " : "";
+        actual.pistasHabilidad.add(marca + p);
+        return marca + p;
     }
 
     /** Fin del dia: los que quedaron en la fila sin atender dejan circular sus rumores. */

@@ -52,6 +52,9 @@ public class Caso {
     public Vertice origen;
     public final Map<Herramienta, List<String>> resultados = new EnumMap<>(Herramienta.class);
     public boolean confrontado;
+    /** Pistas que dio la habilidad unica del rol (se anotan en la libreta). */
+    public final java.util.List<String> pistasHabilidad = new java.util.ArrayList<>();
+    public boolean habilidadUsada;
     public Veredicto decidido;
 
     public Caso(int dia, Persona visitante, Publicacion pub, Verdad verdad, Veredicto correcto, ArbolDialogo dialogo) {

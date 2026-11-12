@@ -31,7 +31,10 @@ public class PruebaJuego {
         for (int d = 1; d <= Historia.DIAS; d++) {
             total += Historia.casosDelDia(d, 1).size();
         }
-        comprobar(total == 22, "22 casos en 5 días");
+        comprobar(total == 15, "15 casos en 5 días (máximo 3 por día)");
+        for (int d = 1; d <= Historia.DIAS; d++) {
+            comprobar(Historia.casosDelDia(d, 1).size() <= Historia.MAX_CASOS_DIA, "día " + d + ": máximo 3 personas");
+        }
 
         System.out.println("\n=== UN CASO POR DENTRO (día 2, impostora del Acueducto) ===");
         Partida p = new Partida(Partida.Modo.SOLO, Arrays.asList("Prueba"), 5, false);

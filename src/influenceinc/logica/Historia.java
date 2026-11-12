@@ -69,10 +69,10 @@ public final class Historia {
     /** Paginas del manual (se agregan reglas cada dia). */
     public static final String[][] MANUAL = {
         {},
-        {"PUBLICAR: solo si es cierto y se puede respaldar (cuenta oficial, fuente concreta).",
+        {"VERIFICADO: solo si es cierto y se puede respaldar (cuenta oficial, fuente concreta).",
             "OPINIÓN: gustos y opiniones se publican marcados como opinión. No son mentira ni verdad.",
             "RECHAZAR: si es falso, aunque quien lo trae sea buena gente que se lo creyó.",
-            "DENUNCIAR: si quien lo trae es una cuenta falsa o un impostor. Se reporta y se elimina.",
+            "REPORTAR: si quien lo trae es una cuenta falsa o un impostor. Se reporta y se elimina.",
             "Señales de alerta: cuenta recién creada, pocos seguidores, sin fuente, pide reenviar ya.",
             "Una señal es una PISTA, no una prueba: hay verdades alarmistas."},
         {"DIRECTORIO: toda cuenta oficial está registrada. Un solo carácter distinto = cuenta falsa.",
@@ -168,7 +168,19 @@ public final class Historia {
         return m;
     }
 
-    /** Los casos de un dia, en orden de llegada. */
+    /** Maximo de personas (casos) por dia: la jornada es mas agil. */
+    public static final int MAX_CASOS_DIA = 3;
+
+    /**
+     * Los casos de un dia, en orden de llegada (maximo 3 por dia).
+     *
+     * Se escogieron para que cada dia tenga variedad (algo verdadero, algo
+     * falso y un impostor o publicidad) y para conservar la historia: la
+     * impostora del Acueducto (dia 2), la foto vieja (dia 3), el soborno de
+     * $500 (dia 4) y el deepfake del jefe (dia 5). Los demas casos de la
+     * historia (Pedro, Monica real, Hugo, la pizzeria, Daniela, la senora y
+     * Lina) quedan como reserva en este archivo.
+     */
     public static List<Caso> casosDelDia(int dia, long semilla) {
         Map<Integer, Publicacion> p = publicaciones();
         Random r = new Random(semilla * 31 + dia);
@@ -177,36 +189,46 @@ public final class Historia {
             case 1:
                 l.add(carmen(p, semilla));
                 l.add(ortiz(p, semilla));
-                l.add(pedro(p, semilla));
                 l.add(kevin(p, semilla));
                 break;
             case 2:
                 l.add(jenny(p, semilla));
                 l.add(monicaFalsa(p, semilla, r));
                 l.add(valeFit(p, semilla));
-                l.add(monicaReal(p, semilla));
                 break;
             case 3:
                 l.add(brayan(p, semilla));
-                l.add(hugo(p, semilla));
                 l.add(doctor(p, semilla, r));
                 l.add(andres(p, semilla));
-                l.add(pizzeria(p, semilla));
                 break;
             case 4:
-                l.add(daniela(p, semilla));
                 l.add(caro(p, semilla));
                 l.add(ricky(p, semilla));
-                l.add(senora(p, semilla));
                 l.add(julian(p, semilla));
                 break;
             default:
-                l.add(lina(p, semilla));
                 l.add(oscar(p, semilla));
                 l.add(urgente(p, semilla));
                 l.add(ramiro(p, semilla));
                 break;
         }
+        while (l.size() > MAX_CASOS_DIA) {
+            l.remove(l.size() - 1);
+        }
+        return l;
+    }
+
+    /** Casos de reserva (no se usan con el maximo de 3 por dia, se conservan para futuras versiones). */
+    static List<Caso> casosDeReserva(long semilla) {
+        Map<Integer, Publicacion> p = publicaciones();
+        List<Caso> l = new ArrayList<>();
+        l.add(pedro(p, semilla));
+        l.add(monicaReal(p, semilla));
+        l.add(hugo(p, semilla));
+        l.add(pizzeria(p, semilla));
+        l.add(daniela(p, semilla));
+        l.add(senora(p, semilla));
+        l.add(lina(p, semilla));
         return l;
     }
 

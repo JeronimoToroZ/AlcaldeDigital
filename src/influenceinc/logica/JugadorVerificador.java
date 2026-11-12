@@ -3,6 +3,7 @@ package influenceinc.logica;
 import influenceinc.estructuras.ArbolAVLGenerico;
 import influenceinc.estructuras.ArbolConsecuencias;
 import influenceinc.modelo.CuentaOficial;
+import influenceinc.modelo.RolJugador;
 import influenceinc.modelo.Veredicto;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -18,6 +19,8 @@ public class JugadorVerificador {
     public static final int MAX_ADVERTENCIAS = 4;
 
     public final String nombre;
+    /** El rol que escogio al empezar: define sus herramientas y su habilidad unica. */
+    public final RolJugador rol;
     public int puntos;
     public int dinero = 100;
     public int reputacion = 50;
@@ -29,11 +32,29 @@ public class JugadorVerificador {
     public int aciertos, errores, impostoresAtrapados, casosAtendidos;
     public boolean denuncioJefe, aproboDeepfake, despedido;
     public final Set<String> logros = new LinkedHashSet<>();
+    /** Habilidad unica: veces usada y veces bien resuelta. */
+    public int habilidadesUsadas, habilidadesBien;
+    /** Alertas virales: bien resueltas (verificar / reportar) y mal resueltas (compartir). */
+    public int viralesBien, viralesMal;
+    /** Apoyo que el candidato gano en sus ruedas de prensa (puntos de votacion). */
+    public int apoyo;
+    /** TIENDA: seguros de reputacion (cada uno anula una advertencia). */
+    public int seguros;
+    /** TIENDA: lupa de alta precision comprada (senala la zona sospechosa). */
+    public boolean lupaPrecision;
+    /** TIENDA: lo que compro (para el informe). */
+    public final List<String> compras = new ArrayList<>();
+    public int gastado;
     /** Bitacora de decisiones (para el informe final). */
     public final List<String> bitacora = new ArrayList<>();
 
     public JugadorVerificador(String nombre, long semilla) {
+        this(nombre, RolJugador.PERIODISTA, semilla);
+    }
+
+    public JugadorVerificador(String nombre, RolJugador rol, long semilla) {
         this.nombre = nombre;
+        this.rol = rol == null ? RolJugador.PERIODISTA : rol;
         this.ciudad = new CiudadEstado(semilla);
         for (CuentaOficial c : Historia.directorioInicial()) {
             directorio.insertar(c.arroba, c);
@@ -80,6 +101,17 @@ public class JugadorVerificador {
     /** Puntaje final: puntos + ciudad + reputacion. */
     public int puntajeFinal() {
         return puntos + ciudad.salud() * 10 + reputacion * 5 - advertencias * 100;
+    }
+
+    /**
+     * Intencion de voto (0..100) para un jugador CANDIDATO: sale de como quedo
+     * SU ciudad (confianza, informacion verificada, conflictos, desinformacion),
+     * de su reputacion y del apoyo que gano respondiendo con responsabilidad.
+     */
+    public int apoyoElectoral() {
+        double v = 18 + ciudad.confianza * 0.30 + ciudad.verificada * 0.18 + reputacion * 0.12
+                - ciudad.conflictos * 0.15 - ciudad.desinformacion() * 0.20 + apoyo * 1.2 - advertencias * 4;
+        return Math.max(3, Math.min(97, (int) Math.round(v)));
     }
 
     public String fila() {
