@@ -38,8 +38,8 @@ import java.util.Set;
 public class Jornada {
 
     public static final int INICIO = 9 * 60, CIERRE = 18 * 60;
-    /** Minutos de juego por segundo real (9 horas en 6 minutos). */
-    public static final double VELOCIDAD = 540.0 / 360.0;
+    /** Minutos de juego por segundo real (9 horas en 8 minutos: hay tiempo para analizar cada caso). */
+    public static final double VELOCIDAD = 540.0 / 480.0;
 
     public enum Evento {
         APAGON("¡Apagón! El computador se reinicia: sin herramientas por un rato."),
@@ -67,6 +67,8 @@ public class Jornada {
         public boolean advertencia, despedido, bonoRapidez, seguroUsado;
         public GrafoRed.ResultadoPropagacion propagacion;
         public List<String> logrosNuevos = new ArrayList<>();
+        /** Barrios que se calmaron por la red de alerta (Kruskal). */
+        public List<Integer> calmados = new ArrayList<>();
     }
 
     public final int dia;
@@ -97,6 +99,10 @@ public class Jornada {
     public final List<String> cambiosDeReglas;
     /** Alerta viral pendiente de decision (la vista la muestra con cuenta regresiva). */
     private Habilidades.Viral viralPendiente;
+    /** Mensajes que van a llegar al celular hoy (ya vienen en orden de hora). */
+    private final List<Historia.MensajeProgramado> mensajes;
+    /** Lo que salio hoy en las noticias: {hora, texto}. Lo muestra la app Noticias. */
+    private final List<String[]> noticias = new ArrayList<>();
 
     public Jornada(int dia, JugadorVerificador jugador, long semilla, boolean relajado) {
         this.dia = dia;
@@ -104,6 +110,7 @@ public class Jornada {
         this.relajado = relajado;
         this.azar = new Random(semilla * 7 + dia * 131);
         this.cambiosDeReglas = jugador.prepararDia(dia);
+        this.mensajes = Historia.mensajesDelDia(dia, jugador.rol);
         fila.addAll(Historia.casosDelDia(dia, semilla));
         // eventos aleatorios del dia (componente de azar)
         Evento[] posibles = {Evento.APAGON, Evento.CAFE, Evento.VIRAL, Evento.FILA};
@@ -671,6 +678,11 @@ public class Jornada {
                 }
             }
             r.add("[!] DFS: el origen pertenece a un ANILLO de " + anillo + " cuentas falsas que se comparten entre sí.");
+            GrafoRed.ResultadoBellmanFord bf = g.bellmanFord(o);
+            if (bf.cicloNegativo) {
+                r.add("[!] Bellman-Ford: ciclo de peso negativo = CÁMARA DE ECO (" + bf.enCiclo.size()
+                        + " cuentas se dan credibilidad entre ellas).");
+            }
             insertarConfrontacion("Lo que trae lo empujan cuentas falsas conectadas entre sí.", true);
         } else {
             r.add("El origen es una cuenta real.");
@@ -723,6 +735,7 @@ public class Jornada {
         }
         if (e.acierto && c.zona > 1) {
             ciudad.panico[c.zona] = 0;
+            res.calmados = ciudad.calmarPorRedDeAlerta(c.zona);   // la calma viaja por el arbol de Kruskal
         }
 
         // puntos, dinero, reputacion
@@ -795,6 +808,9 @@ public class Jornada {
             res.titular = e.explicacion;
         }
         titulares.add(res.titular);
+        // clasificar la publicacion en el ABB del archivo (por credibilidad)
+        jugador.archivo.insertar(c.pub.getCredibilidad() * 1000 + c.pub.getId(),
+                c.pub.getCredibilidad() + "|" + v.sello + "|" + (e.acierto ? "1" : "0") + "|" + res.titular);
         jugador.bitacora.add("Día " + dia + " · " + c.visitante.nombre + " › " + v.sello
                 + (e.acierto ? " [ok]" : " [x] (era: " + c.correcto.sello + ")"));
         atendidos.add(c);
@@ -832,7 +848,7 @@ public class Jornada {
 
     /**
      * Cierra el mini-juego de la habilidad: gasta minutos de juego, anota las
-     * pistas en la libreta y, si salio bien y el caso es sospechoso, INSERTA
+     * pistas (app Habilidad) y, si salio bien y el caso es sospechoso, INSERTA
      * una confrontacion en el arbol de dialogo (igual que las herramientas).
      */
     public List<String> terminarHabilidad(boolean exito, int minutos) {
@@ -1035,6 +1051,55 @@ public class Jornada {
         String marca = actual.sospechoso() || actual.verdad == Verdad.PUBLICIDAD_OCULTA ? "[!] " : actual.verdad == Verdad.VERDADERA ? "[ok] " : "";
         actual.pistasHabilidad.add(marca + p);
         return marca + p;
+    }
+
+    // ==================================================================
+    // Pista de sellos (minijuego estilo Pump It Up)
+    // ==================================================================
+
+    /** Pista nueva: caen mezclados todos los sellos que existen hoy. */
+    public PistaSellos prepararPista(double altoPista) {
+        return new PistaSellos(sellos(), altoPista, azar);
+    }
+
+    /**
+     * El jugador piso un icono de OTRO sello en la pista: es la unica forma de
+     * perder una vida al instante. Recibe una ADVERTENCIA (el seguro de la
+     * tienda la puede absorber).
+     * @return true si de verdad se sumo la advertencia (false si la absorbio el seguro)
+     */
+    public boolean fallarSello() {
+        jugador.sellosFallidos++;
+        if (jugador.seguros > 0) {
+            jugador.seguros--;
+            return false;
+        }
+        jugador.advertir();
+        if (jugador.despedido) {
+            cerrar();
+        }
+        return true;
+    }
+
+    // ==================================================================
+    // Celular y noticias del dia
+    // ==================================================================
+
+    /** Mensajes cuya hora ya llego (se entregan una sola vez). */
+    public List<Historia.MensajeProgramado> tomarMensajes() {
+        List<Historia.MensajeProgramado> l = new ArrayList<>();
+        while (!mensajes.isEmpty() && mensajes.get(0).minuto <= minuto) {
+            l.add(mensajes.remove(0));
+        }
+        return l;
+    }
+
+    public void anotarNoticia(String texto) {
+        noticias.add(0, new String[]{hora(), texto});
+    }
+
+    public List<String[]> getNoticias() {
+        return noticias;
     }
 
     /** Fin del dia: los que quedaron en la fila sin atender dejan circular sus rumores. */

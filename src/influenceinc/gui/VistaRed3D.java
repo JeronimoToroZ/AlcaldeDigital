@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * El ESCANER DE RED: el grafo social en 3D (motor propio) dentro del monitor.
+ * El ESCANER DE RED: el grafo social en 3D (motor propio) dentro de la app Red del celular.
  * Las personas estan abajo, por barrios; las cuentas falsas forman un anillo
  * flotante; el origen del caso brilla y sus oleadas BFS se iluminan.
  */

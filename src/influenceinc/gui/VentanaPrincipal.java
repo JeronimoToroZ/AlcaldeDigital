@@ -1,10 +1,14 @@
 package influenceinc.gui;
 
+import influenceinc.estructuras.Ordenamientos;
+import influenceinc.estructuras.Vertice;
 import influenceinc.logica.Historia;
 import influenceinc.logica.Jornada;
 import influenceinc.logica.JugadorVerificador;
 import influenceinc.logica.Partida;
 import influenceinc.modelo.RolJugador;
+import influenceinc.modelo.TipoCuenta;
+import influenceinc.modelo.Veredicto;
 import influenceinc.red.ClienteOficina;
 import influenceinc.red.ServidorOficina;
 import java.awt.AlphaComposite;
@@ -48,6 +52,8 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
     private ServidorOficina servidor;
     private ClienteOficina cliente;
     private final List<String[]> marcador = new ArrayList<>();
+    /** Dia que el servidor ya autorizo (partida en red). */
+    private int turnoRed = 1;
 
     public VentanaPrincipal() {
         super("Alcalde Digital — Mesa de Verificación");
@@ -256,6 +262,7 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
 
     private void empezar(Partida p) {
         partida = p;
+        turnoRed = 1;
         marcador.clear();
         oficina.setMarcadorRed(new ArrayList<String>());
         oficina.empezar(p);
@@ -293,8 +300,15 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
                         SwingUtilities.invokeLater(() -> {
                             marcador.clear();
                             marcador.addAll(filas);
+                            // de mayor a menor puntaje; son 2 a 4 filas, BURBUJA alcanza
+                            Ordenamientos.burbuja(marcador, new java.util.Comparator<String[]>() {
+                                @Override
+                                public int compare(String[] a, String[] b) {
+                                    return Integer.compare(numero(b[1]), numero(a[1]));
+                                }
+                            });
                             List<String> l = new ArrayList<>();
-                            for (String[] f : filas) {
+                            for (String[] f : marcador) {
                                 l.add(f[0] + " " + f[1] + (f[5].equals("1") ? " (terminó)" : " (día " + f[2] + ")"));
                             }
                             oficina.setMarcadorRed(l);
@@ -310,6 +324,32 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
                                 ir("menu");
                             }
                         });
+                    }
+
+                    @Override
+                    public void alRelacion(String quien, String id, String cuenta) {
+                        SwingUtilities.invokeLater(() -> oficina.relacionDeRed(quien, id, cuenta));
+                    }
+
+                    @Override
+                    public void alEspera(int dia, List<String> faltan) {
+                        SwingUtilities.invokeLater(() -> oficina.setFaltan(faltan));
+                    }
+
+                    @Override
+                    public void alTurno(int dia) {
+                        SwingUtilities.invokeLater(() -> {
+                            turnoRed = Math.max(turnoRed, dia);
+                            if (oficina.esperando()) {
+                                oficina.nuevoTurno();
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void alNoticia(String quien, String texto) {
+                        // llega por el hilo del socket: se pasa al hilo de Swing antes de tocar la vista
+                        SwingUtilities.invokeLater(() -> oficina.noticiaDeRed(quien, texto));
                     }
                 });
         partida = null;
@@ -338,6 +378,30 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
     @Override
     public void alSellar(Jornada j, Jornada.Resultado r) {
         enviar(j, false);
+        if (cliente == null) {
+            return;
+        }
+        cliente.enviarPublicacion(r.veredicto.sello, r.titular);
+        // si se reporto una cuenta falsa, sale del grafo social de TODOS los jugadores
+        Vertice o = r.caso.origen;
+        if (r.veredicto == Veredicto.DENUNCIAR && o != null && o.tipo == TipoCuenta.BOT && !j.jugador.ciudad.red.contiene(o.id)) {
+            cliente.enviarRelacion(o.id, o.nombre);
+        }
+    }
+
+    @Override
+    public void alEvento(Jornada j, String texto) {
+        if (cliente != null) {
+            cliente.enviarEvento(texto);
+        }
+    }
+
+    private static int numero(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     @Override
@@ -348,6 +412,14 @@ public class VentanaPrincipal extends JFrame implements OficinaVista.Oyente {
             oficina.detener();
             pantallaFinal.mostrar(partida, marcador);
             ir("final");
+        } else if (cliente != null) {
+            // TURNOS en red: el servidor dice cuando todos terminaron el dia
+            cliente.enviarFinDia(j.dia);
+            if (turnoRed > j.dia) {
+                oficina.nuevoTurno();
+            } else {
+                oficina.esperarTurno(new ArrayList<String>());
+            }
         } else {
             oficina.nuevoTurno();
         }

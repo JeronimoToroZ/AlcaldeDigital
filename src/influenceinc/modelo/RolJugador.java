@@ -6,7 +6,7 @@ import java.util.Set;
 /**
  * El ROL que escoge cada jugador al empezar (seccion 4 del enunciado).
  * De el dependen:
- *  - las herramientas de investigacion que puede usar en el monitor, y
+ *  - las apps de investigacion que puede usar en el celular, y
  *  - su HABILIDAD UNICA: una mecanica interactiva distinta para cada rol.
  *
  *   Ciudadano  → "¿Quién te lo mandó?": rastrea la cadena de reenvios en el
@@ -24,7 +24,7 @@ public enum RolJugador {
             "Interactúa con responsabilidad: antes de compartir, averigua de dónde salió lo que te llegó.",
             EnumSet.of(Herramienta.PERFIL, Herramienta.LUPA, Herramienta.IMAGEN)),
     PERIODISTA("Periodista", "Investigación completa",
-            "Usa las 6 herramientas del monitor. El corresponsal (Dijkstra), el escáner de red y las llamadas son solo tuyos.",
+            "Usa las 6 apps de investigación del celular. El corresponsal (Dijkstra), el escáner de red y las llamadas son solo tuyos.",
             "Investiga, detecta noticias falsas y ayuda a la ciudad a distinguir lo confiable.",
             EnumSet.allOf(Herramienta.class)),
     INFLUENCER("Influencer", "Cazabots",
@@ -54,7 +54,7 @@ public enum RolJugador {
         return herramientas.contains(h);
     }
 
-    /** true si el rol tiene un mini-juego propio (el periodista usa el monitor completo). */
+    /** true si el rol tiene un mini-juego propio (el periodista tiene todas las apps). */
     public boolean tieneMiniJuego() {
         return this != PERIODISTA;
     }

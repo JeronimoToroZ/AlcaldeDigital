@@ -66,9 +66,10 @@ public class PruebaEstructuras {
         comprobar(r.costo == 6, "la ruta larga (costo 6) le gana a la directa (costo 9)");
 
         System.out.println("\n=== Propagacion y desmentido ===");
-        GrafoRed.ResultadoPropagacion p = g.propagar(ana, 3, a -> 1.0, x -> true, new Random(1));
+        // las aristas tienen p = 0,9: con factor 1,12 la probabilidad pasa de 1 y siempre cruza
+        GrafoRed.ResultadoPropagacion p = g.propagar(ana, 3, 1.12, new Random(1));
         comprobar(p.alcance() == 5, "con probabilidad 1 la publicación llega a las 5 cuentas");
-        GrafoRed.ResultadoPropagacion p0 = g.propagar(ana, 3, a -> 0.0, x -> true, new Random(1));
+        GrafoRed.ResultadoPropagacion p0 = g.propagar(ana, 3, 0.0, new Random(1));
         comprobar(p0.alcance() == 0, "con probabilidad 0 no llega a nadie");
         for (Vertice x : p.alcanzados()) {
             x.desinformado = true;

@@ -1,8 +1,8 @@
 package influenceinc.logica;
 
+import influenceinc.estructuras.Ordenamientos;
 import influenceinc.modelo.RolJugador;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -114,9 +114,10 @@ public class Partida {
         return true;
     }
 
+    /** Ranking por puntaje final (de mayor a menor), con QUICK SORT. */
     public List<JugadorVerificador> ranking() {
         List<JugadorVerificador> l = new ArrayList<>(jugadores);
-        Collections.sort(l, new Comparator<JugadorVerificador>() {
+        Ordenamientos.quick(l, new Comparator<JugadorVerificador>() {
             @Override
             public int compare(JugadorVerificador a, JugadorVerificador b) {
                 return Integer.compare(b.puntajeFinal(), a.puntajeFinal());

@@ -35,6 +35,14 @@ public class CiudadEstado {
     public final List<Vertice> influencers = new ArrayList<>();
     public Vertice medio, agencia;
     private final Random azar;
+    /** Distancias entre todas las zonas (Floyd-Warshall, se calcula una vez). */
+    public final int[][] distancias;
+    /** Red de alerta temprana: arbol de expansion minima de las calles (Kruskal). */
+    public final List<int[]> redAlerta;
+    /** Cobertura del noticiero: calles en el orden en que Prim las agrega desde el estudio. */
+    public final List<int[]> coberturaNoticiero;
+    /** Zona del estudio de Noticias Nova: el centro del grafo (sale de Floyd-Warshall). */
+    public final int estudio;
 
     public CiudadEstado(long semilla) {
         azar = new Random(semilla);
@@ -44,6 +52,10 @@ public class CiudadEstado {
         for (int[] c : CALLES) {
             mapa.agregarCalle(c[0], c[1]);
         }
+        distancias = mapa.floydWarshall();
+        estudio = GrafoCiudad.centro(distancias);
+        redAlerta = mapa.kruskal();
+        coberturaNoticiero = mapa.prim(estudio);
         construirRed();
     }
 
@@ -188,11 +200,7 @@ public class CiudadEstado {
         if (origen != null && red.contiene(origen.id) && agencia.aristaHacia(origen) == null && origen != agencia) {
             red.conectar(agencia, origen, 1.0, 1);
         }
-        GrafoRed.ResultadoPropagacion r = red.propagar(agencia, 3,
-                a -> a.probabilidad * (bulo ? 0.7 : 0.6),
-                v -> v.tipo == TipoCuenta.USUARIO || v.tipo == TipoCuenta.BOT || v.tipo == TipoCuenta.INFLUENCER
-                        || v.tipo == TipoCuenta.MEDIO,
-                azar);
+        GrafoRed.ResultadoPropagacion r = red.propagar(agencia, 3, bulo ? 0.7 : 0.6, azar);
         for (Vertice v : r.alcanzados()) {
             if (v.tipo == TipoCuenta.USUARIO) {
                 if (bulo && !v.escuchoDesmentido) {
@@ -289,6 +297,71 @@ public class CiudadEstado {
         convivencia = lim(convivencia - activas / 2);
         bienestar = lim(bienestar - (activas + 1) / 2);
         return nuevas.size();
+    }
+
+    /**
+     * Cuando aciertas sobre un barrio, el aviso viaja por la RED DE ALERTA
+     * (arbol de Kruskal): los barrios conectados a el por esa red se calman.
+     * @return los barrios que se calmaron
+     */
+    public List<Integer> calmarPorRedDeAlerta(int zona) {
+        List<Integer> calmados = new ArrayList<>();
+        for (int[] c : redAlerta) {
+            int otro = c[0] == zona ? c[1] : c[1] == zona ? c[0] : -1;
+            if (otro > 1 && panico[otro] > 0) {
+                panico[otro] = 0;
+                calmados.add(otro);
+            }
+        }
+        return calmados;
+    }
+
+    /**
+     * Barrios a los que llega la senal EN VIVO del noticiero el dia d: la
+     * cobertura crece cada dia siguiendo el orden de Prim desde el estudio.
+     */
+    public List<Integer> barriosEnVivo(int dia) {
+        List<Integer> l = new ArrayList<>();
+        l.add(estudio);
+        for (int i = 0; i < coberturaNoticiero.size() && i < dia; i++) {
+            l.add(coberturaNoticiero.get(i)[1]);
+        }
+        return l;
+    }
+
+    /**
+     * Dia de elecciones: cuantos votantes por hora pueden llegar a las urnas
+     * (Plaza Central) por las calles. Es un FLUJO MAXIMO (Ford-Fulkerson):
+     *   fuente  -> cada barrio residencial (capacidad = gente que quiere votar)
+     *   calles  -> capacidad segun lo largas que son; con PANICO solo pasa el 40 %
+     *   sumidero = Plaza Central.
+     */
+    public int flujoVotantes() {
+        int n = ZONAS.length;
+        int fuente = n;
+        int[][] cap = new int[n + 1][n + 1];
+        for (int[] c : mapa.calles()) {
+            int largo = mapa.largoCalle(c[0], c[1]);
+            int k = Math.max(40, 30000 / Math.max(1, largo));
+            if (panico[c[0]] > 0 || panico[c[1]] > 0) {
+                k = k * 4 / 10;
+            }
+            cap[c[0]][c[1]] = k;
+            cap[c[1]][c[0]] = k;
+        }
+        for (int z = 2; z < n; z++) {
+            cap[fuente][z] = 120;
+        }
+        return GrafoCiudad.flujoMaximo(cap, fuente, 0);
+    }
+
+    /** El flujo de votantes si no hubiera nada de panico (para comparar). */
+    public int flujoVotantesIdeal() {
+        int[] antes = panico.clone();
+        calmarPanico();
+        int f = flujoVotantes();
+        System.arraycopy(antes, 0, panico, 0, antes.length);
+        return f;
     }
 
     public void calmarPanico() {

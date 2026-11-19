@@ -46,7 +46,7 @@ public final class Tienda {
                 return j.getActual() == null ? "Primero haz pasar a alguien a la ventanilla." : null;
             case RECARGA:
                 if (!jv.rol.tieneMiniJuego()) {
-                    return "Como periodista no tienes mini-juego: tu habilidad es el monitor completo.";
+                    return "Como periodista no tienes mini-juego: tu habilidad son todas las apps del celular.";
                 }
                 if (j.getActual() == null) {
                     return "Primero haz pasar a alguien a la ventanilla.";
@@ -90,7 +90,7 @@ public final class Tienda {
                 msg = "Ganaste 30 minutos más de jornada.";
                 break;
             case INFORMANTE:
-                msg = j.pistaInformante().replaceFirst("^\\[[^\\]]*\\]\\s*", "") + " (anotado en la libreta)";
+                msg = j.pistaInformante().replaceFirst("^\\[[^\\]]*\\]\\s*", "") + " (te llegó al celular)";
                 break;
             case RECARGA:
                 j.recargarHabilidad();

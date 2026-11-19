@@ -1,6 +1,7 @@
 package influenceinc.logica;
 
 import influenceinc.estructuras.ArbolAVLGenerico;
+import influenceinc.estructuras.ArbolBinarioBusqueda;
 import influenceinc.estructuras.ArbolConsecuencias;
 import influenceinc.modelo.CuentaOficial;
 import influenceinc.modelo.RolJugador;
@@ -47,6 +48,16 @@ public class JugadorVerificador {
     public int gastado;
     /** Bitacora de decisiones (para el informe final). */
     public final List<String> bitacora = new ArrayList<>();
+    /** Su celular: agenda (ABB), mensajes (tabla hash) y notificaciones (cola). */
+    public final Telefono telefono;
+    /**
+     * ARCHIVO de publicaciones selladas, CLASIFICADAS en un ABB por credibilidad
+     * (clave = credibilidad * 1000 + id, asi no se repite). El inorden da la
+     * lista de la menos creible a la mas creible.
+     */
+    public final ArbolBinarioBusqueda<Integer, String> archivo = new ArbolBinarioBusqueda<>();
+    /** Veces que piso un sello equivocado en la pista (cada una fue una advertencia). */
+    public int sellosFallidos;
 
     public JugadorVerificador(String nombre, long semilla) {
         this(nombre, RolJugador.PERIODISTA, semilla);
@@ -61,6 +72,7 @@ public class JugadorVerificador {
         }
         // el dia 1 todavia no existe el sello #PUBLICIDAD: se inserta el dia 2
         arbol.eliminar(Veredicto.ETIQUETA);
+        telefono = new Telefono(this.rol, Historia.directorioInicial());
     }
 
     /** Los cambios de reglas de cada manana: modifican los arboles (insertar / eliminar). */

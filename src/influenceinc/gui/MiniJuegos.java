@@ -323,7 +323,7 @@ final class MiniJuegos {
             g.setColor(Tema.tinta());
             Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 14), "Errores: " + errores + "  ·  tiempo de juego usado: "
                     + (6 + 2 * errores) + " min", r.x, y, r.width, 20, r.y + r.height);
-            v.boton(g, new Rectangle(r.x, r.y + r.height - 70, 320, 52), "Anotar en la libreta", Dibujo.Estilo.PRINCIPAL,
+            v.boton(g, new Rectangle(r.x, r.y + r.height - 70, 320, 52), "Guardar en el celular", Dibujo.Estilo.PRINCIPAL,
                     () -> terminado = true);
         }
 
@@ -520,7 +520,7 @@ final class MiniJuegos {
                 String d = "Atrapaste " + atrapados + " de " + botsVistos + " cuentas falsas y marcaste " + falsos
                         + " personas reales. " + (botsVistos == 0 ? "Esta vez casi todo era gente real: bien por no marcarla. " : "")
                         + "Los perfiles salieron del BFS de 2 oleadas desde el origen en el grafo social.";
-                velo(g, t, d, "Anotar en la libreta", () -> terminado = true);
+                velo(g, t, d, "Guardar en el celular", () -> terminado = true);
             }
         }
 
@@ -776,7 +776,7 @@ final class MiniJuegos {
                     + "confianza. Cada respuesta cambió los indicadores de la ciudad (confianza, conflictos, convivencia o "
                     + "desinformación) y tu intención de voto para la elección final.", a.x + 120, a.y + 430, a.width - 240, 21,
                     a.y + a.height - 120);
-            v.boton(g, new Rectangle((int) a.getCenterX() - 160, a.y + a.height - 100, 320, 52), "Anotar en la libreta",
+            v.boton(g, new Rectangle((int) a.getCenterX() - 160, a.y + a.height - 100, 320, 52), "Guardar en el celular",
                     Dibujo.Estilo.PRINCIPAL, () -> terminado = true);
         }
 

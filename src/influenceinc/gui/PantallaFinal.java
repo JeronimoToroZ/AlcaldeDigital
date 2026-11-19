@@ -104,7 +104,8 @@ public class PantallaFinal extends Lienzo {
         Dibujo.centrado(g, "Resultados de Ciudad Nova", w / 2.0, 58);
         g.setFont(Tema.fuente(Font.PLAIN, 15));
         g.setColor(Tema.altoContraste ? Color.WHITE : new Color(96, 58, 44));
-        Dibujo.centrado(g, "Cada decisión en Civitas cambió la ciudad. Así terminó la semana electoral.", w / 2.0, 86);
+        Dibujo.centrado(g, "Cada decisión en Civitas cambió la ciudad. " + Historia.movilidad(partida.ranking().get(0)),
+                w / 2.0, 86);
 
         // eleccion del alcalde
         List<Object[]> el = eleccion();

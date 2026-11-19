@@ -27,6 +27,18 @@ public class ClienteOficina {
         void alMarcador(List<String[]> filas);
 
         void alError(String texto);
+
+        /** Otro jugador destapo algo: llega como "ultima hora" al noticiero de todos. */
+        void alNoticia(String quien, String texto);
+
+        /** Otro jugador elimino una cuenta falsa: tambien sale del grafo social propio. */
+        void alRelacion(String quien, String idCuenta, String nombreCuenta);
+
+        /** Faltan estos jugadores por terminar el dia. */
+        void alEspera(int dia, List<String> faltan);
+
+        /** Todos terminaron: empieza este dia. */
+        void alTurno(int dia);
     }
 
     private final Socket socket;
@@ -74,12 +86,60 @@ public class ClienteOficina {
             o.alMarcador(filas);
         } else if (l.startsWith("ERROR ")) {
             o.alError(l.substring(6));
+        } else if (l.startsWith("NOTICIA ")) {
+            String[] p = l.substring(8).split("\\|", 2);
+            if (p.length == 2) {
+                o.alNoticia(p[0], p[1]);
+            }
+        } else if (l.startsWith("RELACION ")) {
+            String[] p = l.substring(9).split("\\|", 3);
+            if (p.length == 3) {
+                o.alRelacion(p[0], p[1], p[2]);
+            }
+        } else if (l.startsWith("ESPERA ")) {
+            String[] p = l.substring(7).split("\\|", 2);
+            List<String> faltan = p.length < 2 || p[1].isEmpty() ? new ArrayList<String>() : Arrays.asList(p[1].split(","));
+            o.alEspera(entero(p[0]), faltan);
+        } else if (l.startsWith("TURNO ")) {
+            o.alTurno(entero(l.substring(6)));
         }
     }
 
     public void enviarResultado(int puntos, int dia, int aciertos, int advertencias, boolean terminado) {
         out.println("RES " + nombre + "|" + puntos + "|" + dia + "|" + aciertos + "|" + advertencias + "|"
                 + (terminado ? 1 : 0));
+    }
+
+    private static int entero(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** Publicacion sellada: el servidor la guarda y la manda como noticia a los demas. */
+    public void enviarPublicacion(String sello, String titular) {
+        out.println("PUB " + limpio(sello) + "|" + limpio(titular));
+    }
+
+    /** Cuenta falsa eliminada del grafo social: el servidor la elimina en el grafo de todos. */
+    public void enviarRelacion(String idCuenta, String nombreCuenta) {
+        out.println("REL " + limpio(idCuenta) + "|" + limpio(nombreCuenta));
+    }
+
+    /** Evento del dia (apagon, viral, panico...). */
+    public void enviarEvento(String texto) {
+        out.println("EVT " + limpio(texto));
+    }
+
+    /** Termine este dia: el servidor decide cuando empieza el siguiente para todos. */
+    public void enviarFinDia(int dia) {
+        out.println("FIN " + dia);
+    }
+
+    private static String limpio(String s) {
+        return s == null ? "" : s.replace('\n', ' ').replace('|', '/');
     }
 
     public void cerrar() {

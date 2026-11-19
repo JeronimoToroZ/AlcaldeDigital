@@ -144,7 +144,7 @@ public final class VistaArboles {
         avl(g, a, buscada, r, false);
     }
 
-    /** compacto = solo circulos; se rotulan el camino de busqueda (para el monitor). */
+    /** compacto = solo circulos; se rotulan el camino de busqueda (para la app Directorio). */
     public static <V> void avl(Graphics2D g, ArbolAVLGenerico<String, V> a, String buscada, Rectangle r, boolean compacto) {
         ArbolAVLGenerico.Nodo<String, V> raiz = a.getRaiz();
         if (raiz == null) {

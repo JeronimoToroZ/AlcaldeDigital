@@ -1,5 +1,6 @@
 package influenceinc.estructuras;
 
+import influenceinc.modelo.TipoCuenta;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,8 +14,7 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.Predicate;
-import java.util.function.ToDoubleFunction;
+import influenceinc.modelo.TipoCuenta;
 
 /**
  * GRAFO SOCIAL DE CIVITAS
@@ -389,9 +389,12 @@ public class GrafoRed {
         }
         distancia.put(origen, 0);
 
-        PriorityQueue<Vertice> cola = new PriorityQueue<>((a, b) -> {
-            int c = Integer.compare(distancia.get(a), distancia.get(b));
-            return c != 0 ? c : a.id.compareTo(b.id);
+        PriorityQueue<Vertice> cola = new PriorityQueue<>(new java.util.Comparator<Vertice>() {
+            @Override
+            public int compare(Vertice a, Vertice b) {
+                int c = Integer.compare(distancia.get(a), distancia.get(b));
+                return c != 0 ? c : a.id.compareTo(b.id);
+            }
         });
         cola.add(origen);
 
@@ -426,6 +429,79 @@ public class GrafoRed {
         }
         Collections.reverse(camino);
         return new Ruta(camino, distancia.get(destino));
+    }
+
+    // ==================================================================
+    // BELLMAN-FORD: pesos negativos y camaras de eco
+    // ==================================================================
+
+    /** Resultado de Bellman-Ford. */
+    public static class ResultadoBellmanFord {
+        /** Distancia (en "costo de credibilidad") desde el origen; Integer.MAX_VALUE = no llega. */
+        public final Map<String, Integer> distancia = new LinkedHashMap<>();
+        /** true si desde el origen se llega a un ciclo de peso negativo. */
+        public boolean cicloNegativo;
+        /** Cuentas que estan en (o despues de) el ciclo negativo. */
+        public final List<Vertice> enCiclo = new ArrayList<>();
+    }
+
+    /**
+     * Peso de una arista para Bellman-Ford: "cuanta credibilidad CUESTA que el
+     * mensaje avance". Entre personas reales cuesta su costo normal (positivo).
+     * Entre dos cuentas falsas el peso es NEGATIVO (-1): cuando un bot reenvia
+     * lo que dijo otro bot, el mensaje parece MAS creible, no menos.
+     */
+    public static int pesoCredibilidad(Arista a) {
+        if (a.origen.tipo == TipoCuenta.BOT && a.destino.tipo == TipoCuenta.BOT) {
+            return -1;
+        }
+        return a.costo;
+    }
+
+    /**
+     * BELLMAN-FORD desde una cuenta. A diferencia de Dijkstra acepta pesos
+     * negativos: relaja TODAS las aristas V-1 veces. Si en una pasada mas
+     * todavia se puede relajar algo, hay un CICLO NEGATIVO alcanzable.
+     * En la red eso es una CAMARA DE ECO: un grupo de cuentas que se repiten
+     * entre ellas y hacen que una mentira parezca cada vez mas cierta.
+     * Complejidad O(V * E).
+     */
+    public ResultadoBellmanFord bellmanFord(Vertice origen) {
+        ResultadoBellmanFord r = new ResultadoBellmanFord();
+        final int INF = Integer.MAX_VALUE;
+        for (String id : vertices.keySet()) {
+            r.distancia.put(id, INF);
+        }
+        if (origen == null || !vertices.containsKey(origen.id)) {
+            return r;
+        }
+        r.distancia.put(origen.id, 0);
+        List<Arista> todas = getAristas();
+        int n = vertices.size();
+        for (int i = 0; i < n - 1; i++) {
+            boolean cambio = false;
+            for (Arista a : todas) {
+                int du = r.distancia.get(a.origen.id);
+                if (du != INF && du + pesoCredibilidad(a) < r.distancia.get(a.destino.id)) {
+                    r.distancia.put(a.destino.id, du + pesoCredibilidad(a));
+                    cambio = true;
+                }
+            }
+            if (!cambio) {
+                break;                 // ya no cambia nada: no hay ciclo negativo
+            }
+        }
+        // pasada extra: si algo todavia mejora, esta en un ciclo negativo (o despues de uno)
+        for (Arista a : todas) {
+            int du = r.distancia.get(a.origen.id);
+            if (du != INF && du + pesoCredibilidad(a) < r.distancia.get(a.destino.id)) {
+                r.cicloNegativo = true;
+                if (!r.enCiclo.contains(a.destino)) {
+                    r.enCiclo.add(a.destino);
+                }
+            }
+        }
+        return r;
     }
 
     /** Ruta mas barata desde el origen hasta la cuenta desinformada mas cercana. */
@@ -484,15 +560,13 @@ public class GrafoRed {
      * No modifica el estado de los vertices: el motor decide que hacer con
      * los alcanzados (ganarlos como audiencia, desinformarlos, etc.).
      *
-     * @param maxOleadas  saltos maximos
-     * @param probabilidad funcion que da la probabilidad final de cada arista
-     *                    (la del grafo multiplicada por estrategia, confianza...)
-     * @param puedeRecibir filtro: quien puede recibirla (p. ej. no a otra agencia)
-     * @param azar        generador con semilla compartida
+     * @param maxOleadas saltos maximos
+     * @param factor     multiplica la probabilidad de cada arista (un bulo se
+     *                   comparte mas que un dato aburrido)
+     * @param azar       generador con semilla compartida
+     * Las agencias no reciben: solo personas, bots, influencers y medios.
      */
-    public ResultadoPropagacion propagar(Vertice origen, int maxOleadas,
-                                         ToDoubleFunction<Arista> probabilidad,
-                                         Predicate<Vertice> puedeRecibir, Random azar) {
+    public ResultadoPropagacion propagar(Vertice origen, int maxOleadas, double factor, Random azar) {
         ResultadoPropagacion r = new ResultadoPropagacion();
         if (origen == null) {
             return r;
@@ -510,10 +584,10 @@ public class GrafoRed {
             for (Vertice emisor : frontera) {
                 for (Arista a : emisor.salientes) {
                     Vertice receptor = a.destino;
-                    if (alcanzados.contains(receptor) || !puedeRecibir.test(receptor)) {
+                    if (alcanzados.contains(receptor) || receptor.tipo == TipoCuenta.AGENCIA) {
                         continue;
                     }
-                    double p = probabilidad.applyAsDouble(a);
+                    double p = a.probabilidad * factor;
                     if (azar.nextDouble() < p) {
                         alcanzados.add(receptor);
                         siguiente.add(receptor);

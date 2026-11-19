@@ -24,6 +24,10 @@ import java.util.List;
 public class PruebaJuego {
 
     private static int fallos = 0;
+    private static final List<String> noticias = new ArrayList<>();
+    private static final List<String> relaciones = new ArrayList<>();
+    private static final List<String> esperas = new ArrayList<>();
+    private static final List<Integer> turnosRed = new ArrayList<>();
 
     public static void main(String[] args) throws Exception {
         System.out.println("=== HISTORIA ===");
@@ -99,6 +103,27 @@ public class PruebaJuego {
         a.enviarResultado(450, 2, 6, 0, false);
         esperar(() -> !marc.isEmpty() && marc.get(0)[1].equals("450"));
         comprobar(!marc.isEmpty() && marc.get(0)[1].equals("450"), "el marcador en vivo llega a todos");
+        a.enviarPublicacion("REPORTAR", "Cae cuenta falsa que inventaba el cierre del colegio");
+        esperar(() -> noticias.size() >= 1);
+        comprobar(noticias.size() == 1 && noticias.get(0).startsWith("Ana: Cae cuenta"),
+                "PUBLICACIONES: el titular de Ana le llega al otro (y no a ella misma)");
+        b.enviarRelacion("b3", "@cuenta_falsa_4");
+        esperar(() -> !relaciones.isEmpty());
+        comprobar(relaciones.size() == 1 && relaciones.get(0).equals("Ana 2:b3"),
+                "RELACIONES: la cuenta falsa que eliminó uno se sincroniza con el otro");
+        a.enviarEvento("Apagón en el sector de la agencia");
+        esperar(() -> noticias.size() >= 2);
+        comprobar(noticias.size() == 2, "EVENTOS: el evento de uno llega a los demás");
+        a.enviarFinDia(1);
+        esperar(() -> !esperas.isEmpty());
+        comprobar(turnosRed.isEmpty() && !esperas.isEmpty() && esperas.get(esperas.size() - 1).equals("Ana 2"),
+                "TURNOS: si Ana termina el día 1, el servidor espera a Ana 2");
+        b.enviarFinDia(1);
+        esperar(() -> turnosRed.size() >= 2);
+        comprobar(turnosRed.size() == 2 && turnosRed.get(0) == 2, "TURNOS: cuando los dos terminan, ambos reciben el día 2");
+        int[] res = s.resumen();
+        comprobar(res[0] == 1 && res[1] == 1 && res[2] == 1 && res[3] == 2,
+                "el servidor guarda publicaciones, relaciones, eventos y el turno");
         a.cerrar();
         b.cerrar();
         s.cerrar();
@@ -132,6 +157,34 @@ public class PruebaJuego {
 
             @Override
             public void alError(String texto) {
+            }
+
+            @Override
+            public void alNoticia(String quien, String texto) {
+                synchronized (noticias) {
+                    noticias.add(quien + ": " + texto);
+                }
+            }
+
+            @Override
+            public void alRelacion(String quien, String id, String cuenta) {
+                synchronized (relaciones) {
+                    relaciones.add(quien + ":" + id);
+                }
+            }
+
+            @Override
+            public void alEspera(int dia, List<String> faltan) {
+                synchronized (esperas) {
+                    esperas.addAll(faltan);
+                }
+            }
+
+            @Override
+            public void alTurno(int dia) {
+                synchronized (turnosRed) {
+                    turnosRed.add(dia);
+                }
             }
         };
     }

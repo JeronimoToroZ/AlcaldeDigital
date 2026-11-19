@@ -2,12 +2,14 @@ package influenceinc.logica;
 
 import influenceinc.estructuras.ArbolDialogo;
 import influenceinc.estructuras.NodoDialogo;
+import influenceinc.estructuras.TablaHash;
 import influenceinc.modelo.Credencial;
 import influenceinc.modelo.Cuenta;
 import influenceinc.modelo.CuentaOficial;
 import influenceinc.modelo.Persona;
 import influenceinc.modelo.Publicacion;
 import influenceinc.modelo.Rasgos;
+import influenceinc.modelo.RolJugador;
 import influenceinc.modelo.RolVisitante;
 import influenceinc.modelo.Senal;
 import influenceinc.modelo.TipoContenido;
@@ -16,9 +18,7 @@ import influenceinc.modelo.Verdad;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 
 /**
@@ -90,6 +90,109 @@ public final class Historia {
     }
 
     // ==================================================================
+    // Mensajes que llegan al celular durante el dia (cambian segun el ROL)
+    // ==================================================================
+
+    /** Un mensaje que llega a cierta hora del dia. */
+    public static class MensajeProgramado {
+        public final int minuto;
+        public final String de;
+        public final String texto;
+
+        MensajeProgramado(int hora, int min, String de, String texto) {
+            this.minuto = hora * 60 + min;
+            this.de = de;
+            this.texto = texto;
+        }
+    }
+
+    /**
+     * Cada rol tiene su propia gente escribiendole: el ciudadano su grupo de
+     * vecinos, el periodista su editora, el influencer su manager y el
+     * candidato su jefa de campana. Don Ramiro les escribe a todos.
+     */
+    public static List<MensajeProgramado> mensajesDelDia(int dia, RolJugador rol) {
+        String c = Telefono.contactoDelRol(rol);
+        String[][] t = textosDelRol(rol);
+        List<MensajeProgramado> l = new ArrayList<>();
+        if (dia >= 1 && dia <= DIAS) {
+            l.add(new MensajeProgramado(10, 20, c, t[dia - 1][0]));
+            l.add(new MensajeProgramado(14, 10, c, t[dia - 1][1]));
+        }
+        switch (dia) {
+            case 3:
+                l.add(new MensajeProgramado(12, 40, Telefono.JEFE, "Mijo, la competencia está nerviosa. Eso es buena señal. Siga así."));
+                break;
+            case 4:
+                l.add(new MensajeProgramado(11, 30, Telefono.JEFE, "Si pasa Ricky, el de ViralStorm, atiéndalo bien. Es... un amigo de la casa."));
+                break;
+            case 5:
+                l.add(new MensajeProgramado(15, 0, Telefono.JEFE, "Ya voy para allá. Tenga listo el sello, campeón."));
+                break;
+            default:
+                break;
+        }
+        return l;
+    }
+
+    private static String[][] textosDelRol(RolJugador rol) {
+        switch (rol) {
+            case CIUDADANO:
+                return new String[][]{
+                    {"Doña Gloria: ¿alguien sabe si es verdad lo del pasaje? Mi hijo dice que sube el lunes.",
+                        "Don Efraín: yo ya lo reenvié a todos, por si acaso. Más vale prevenir."},
+                    {"Jenny: mi primo el policía dice que esta noche nadie salga del barrio.",
+                        "Doña Gloria: ¿y eso quién lo confirmó? Yo no veo nada de la Policía."},
+                    {"Don Efraín: ¡MIREN cómo quedó la avenida anoche! (foto)",
+                        "Profe Luisa: esa foto yo la vi hace años... ¿alguien sabe de cuándo es?"},
+                    {"Doña Gloria: ¿ya vieron la mansión del candidato Pérez? Me la mandó mi comadre.",
+                        "Profe Luisa: vecinos, pidan el documento antes de reenviar. Ya nos han metido muchos goles."},
+                    {"Don Efraín: dicen que se cayó el sistema de los votos. ¿Vamos o no vamos?",
+                        "Profe Luisa: la Registraduría dice que todo está normal. ¡A votar, vecinos!"}
+                };
+            case INFLUENCER:
+                return new String[][]{
+                    {"Bebé, Energy Max quiere un post. Plata fácil, ¿sí o qué?",
+                        "Tus seguidores preguntan por lo del pasaje. Ojo con lo que compartas, que te creen todo."},
+                    {"Si te pagan, se marca #publicidad. Lo dice la Superintendencia, no yo.",
+                        "Vale Fit no marcó su post de Energy Max y ya la están funando en los comentarios."},
+                    {"#AvenidaInundada va primera en tendencias. ¿Comentamos? Espera... ¿es de hoy?",
+                        "Una marca de suplementos te manda un \"estudio\" para compartir. Te lo reenvío, pero léelo antes."},
+                    {"ViralStorm ofrece 2.000 por compartir lo de Pérez. Te lo dejo ahí, tú decides.",
+                        "Cuentas raras te están etiquetando en todo: cero fotos y cuatrocientas publicaciones."},
+                    {"Hoy es veda: nada de política. Sube algo de cómo votar y ya.",
+                        "Si sale un video bomba de un candidato, espera. Lo de última hora casi siempre es falso."}
+                };
+            case CANDIDATO:
+                return new String[][]{
+                    {"Encuesta interna: subimos dos puntos. Que no nos asocien con ningún rumor.",
+                        "Nos piden reaccionar a lo del pasaje. Mejor esperamos el dato oficial."},
+                    {"Si el Acueducto anuncia un corte, que sea el de verdad. Un corte falso nos cuesta votos a todos.",
+                        "Los periodistas preguntan por ti. Respuestas cortas y con datos, por favor."},
+                    {"Circula un audio tuyo que nunca grabaste. No ataques a nadie: desmiéntelo con pruebas.",
+                        "La rueda de prensa de la tarde va a estar dura. Calma y datos."},
+                    {"Nos ofrecen \"información\" sobre Pérez. No la toques: si es falsa, nos hunde con él.",
+                        "Encuesta: la gente quiere un candidato que no repita rumores. Vamos bien."},
+                    {"Hoy no se puede hacer campaña. Solo información de cómo votar.",
+                        "Si aparece un video contra Ramírez, no lo celebres. Hoy es ella; mañana puedes ser tú."}
+                };
+            default:
+                return new String[][]{
+                    {"Llegó una ola de rumores sobre el transporte. Si alguien te trae lo del pasaje, pide el decreto.",
+                        "Bomberos jura que lo del caimán es real. A veces lo raro sí es cierto: verifica, no adivines."},
+                    {"Ojo: hay una cuenta que copia al Acueducto con \"_oficial\" al final. Un carácter cambia todo.",
+                        "Si alguien trae credencial, compara la foto con la cara. Hoy andan suplantando funcionarios."},
+                    {"La foto de la avenida tiene datos de 2019. Haz búsqueda inversa antes de creer.",
+                        "Ese \"doctor\" vende suplementos. Pregúntale qué vende antes de darle tu sello."},
+                    {"ViralStorm está ofreciendo plata a las agencias. Si te ofrecen 500, no es un favor.",
+                        "@la_verdad_nova nació hace seis días. Pásala por el escáner de red."},
+                    {"Hoy es veda electoral: nada de opinión política.",
+                        "Me llegó un video de Ramírez que huele a deepfake. Si llega a tu ventanilla, no lo sueltes."}
+                };
+        }
+    }
+
+    // ==================================================================
     // Directorio oficial (se guarda en un AVL)
     // ==================================================================
 
@@ -117,8 +220,9 @@ public final class Historia {
     // Casos
     // ==================================================================
 
-    private static Map<Integer, Publicacion> publicaciones() {
-        Map<Integer, Publicacion> m = new HashMap<>();
+    /** Diccionario id -> publicacion (tabla hash propia, ver estructuras/TablaHash). */
+    private static TablaHash<Integer, Publicacion> publicaciones() {
+        TablaHash<Integer, Publicacion> m = new TablaHash<>();
         for (Publicacion p : BancoPublicaciones.publicacionesConPistas()) {
             m.put(p.getId(), p);
         }
@@ -182,7 +286,7 @@ public final class Historia {
      * Lina) quedan como reserva en este archivo.
      */
     public static List<Caso> casosDelDia(int dia, long semilla) {
-        Map<Integer, Publicacion> p = publicaciones();
+        TablaHash<Integer, Publicacion> p = publicaciones();
         Random r = new Random(semilla * 31 + dia);
         List<Caso> l = new ArrayList<>();
         switch (dia) {
@@ -220,7 +324,7 @@ public final class Historia {
 
     /** Casos de reserva (no se usan con el maximo de 3 por dia, se conservan para futuras versiones). */
     static List<Caso> casosDeReserva(long semilla) {
-        Map<Integer, Publicacion> p = publicaciones();
+        TablaHash<Integer, Publicacion> p = publicaciones();
         List<Caso> l = new ArrayList<>();
         l.add(pedro(p, semilla));
         l.add(monicaReal(p, semilla));
@@ -243,6 +347,14 @@ public final class Historia {
         return r;
     }
 
+    /** La cara de Don Ramiro (para la foto de contacto en el celular): igual a la de su visita del dia 5. */
+    public static Rasgos caraDelJefe(long semilla) {
+        Rasgos r = cara("Don Ramiro Castaño", semilla);
+        r.edad = 2;
+        r.accesorio = 1;
+        return r;
+    }
+
     private static final String[] MUJERES = {"Doña Carmen", "Jenny Rueda", "Ing. Mónica Ríos", "Vale Fit",
         "Daniela Ruiz", "Caro M.", "Yolanda", "Lina Vargas"};
 
@@ -255,7 +367,7 @@ public final class Historia {
     }
 
     // ------------------------------------------------------------ dia 1
-    private static Caso carmen(Map<Integer, Publicacion> p, long s) {
+    private static Caso carmen(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Doña Carmen", RolVisitante.CIUDADANO, s);
         per.cara.edad = 2;
         ArbolDialogo d = new ArbolDialogo("Buenos días, mijo. Mire lo que me llegó: ¡van a subir el pasaje! "
@@ -279,7 +391,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso ortiz(Map<Integer, Publicacion> p, long s) {
+    private static Caso ortiz(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Sgto. Iván Ortiz", RolVisitante.FUNCIONARIO, s);
         per.credencial = credencial(per, "Comunicaciones", "Cuerpo de Bomberos", "BO-3307");
         ArbolDialogo d = new ArbolDialogo("Buenos días. Cuerpo de Bomberos. Necesitamos que esto salga hoy, "
@@ -301,7 +413,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso pedro(Map<Integer, Publicacion> p, long s) {
+    private static Caso pedro(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Pedro Mejía", RolVisitante.CIUDADANO, s);
         ArbolDialogo d = new ArbolDialogo("Hola. Quiero decir lo que pienso y que lo lea mucha gente.", "neutral");
         d.pregunta("¿Esto es un dato o lo que usted piensa?", "Lo que pienso. Es mi opinión, ¿y qué? Tengo "
@@ -316,7 +428,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso kevin(Map<Integer, Publicacion> p, long s) {
+    private static Caso kevin(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("\"Kevin\"", RolVisitante.CIUDADANO, s);
         per.impostor = true;
         per.cara.pelo = 5;
@@ -340,7 +452,7 @@ public final class Historia {
     }
 
     // ------------------------------------------------------------ dia 2
-    private static Caso jenny(Map<Integer, Publicacion> p, long s) {
+    private static Caso jenny(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Jenny Rueda", RolVisitante.CIUDADANO, s);
         ArbolDialogo d = new ArbolDialogo("Hola. Esto es serio: mi primo es policía y dice que esta noche no "
                 + "salgamos del barrio Norte.", "nerviosa");
@@ -361,7 +473,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso monicaFalsa(Map<Integer, Publicacion> p, long s, Random r) {
+    private static Caso monicaFalsa(TablaHash<Integer, Publicacion> p, long s, Random r) {
         Rasgos real = cara("Ing. Mónica Ríos", s);
         String[] dif = new String[1];
         Rasgos impostora = real.mutar(r, dif);
@@ -389,7 +501,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso monicaReal(Map<Integer, Publicacion> p, long s) {
+    private static Caso monicaReal(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Ing. Mónica Ríos", RolVisitante.FUNCIONARIO, s);
         per.credencial = credencial(per, "Directora de operaciones", "Acueducto de Ciudad Nova", "AC-2214");
         ArbolDialogo d = new ArbolDialogo("Buenas tardes. Mónica Ríos, Acueducto. Disculpe la demora, me dijeron "
@@ -411,7 +523,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso valeFit(Map<Integer, Publicacion> p, long s) {
+    private static Caso valeFit(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Vale Fit", RolVisitante.INFLUENCER, s);
         ArbolDialogo d = new ArbolDialogo("¡Holiii! Quiero que esto lo comparta la agencia, a ver si llego a "
                 + "más gente.", "feliz");
@@ -431,7 +543,7 @@ public final class Historia {
     }
 
     // ------------------------------------------------------------ dia 3
-    private static Caso brayan(Map<Integer, Publicacion> p, long s) {
+    private static Caso brayan(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Brayan", RolVisitante.CIUDADANO, s);
         ArbolDialogo d = new ArbolDialogo("Parce, mire cómo quedó la avenida anoche. Esto no lo muestran en "
                 + "las noticias.", "enojado");
@@ -450,7 +562,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso hugo(Map<Integer, Publicacion> p, long s) {
+    private static Caso hugo(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Ing. Hugo Peña", RolVisitante.FUNCIONARIO, s);
         per.credencial = credencial(per, "Coordinador", "Gestión del Riesgo", "GR-0912");
         ArbolDialogo d = new ArbolDialogo("¡Rápido, por favor! Hay una fuga de gas en la calle 45. Hay que "
@@ -470,7 +582,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso doctor(Map<Integer, Publicacion> p, long s, Random r) {
+    private static Caso doctor(TablaHash<Integer, Publicacion> p, long s, Random r) {
         Rasgos foto = cara("Dr. Julio Mena", s);
         String[] dif = new String[1];
         Rasgos real = foto.mutar(r, dif);
@@ -497,7 +609,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso andres(Map<Integer, Publicacion> p, long s) {
+    private static Caso andres(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Andrés Gil", RolVisitante.FUNCIONARIO, s);
         per.credencial = credencial(per, "Community manager", "Energy Max", "EM-0045");
         ArbolDialogo d = new ArbolDialogo("Hola. Esto nos da vergüenza, pero tenemos que avisarlo: un lote "
@@ -515,7 +627,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso pizzeria(Map<Integer, Publicacion> p, long s) {
+    private static Caso pizzeria(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("\"Don Toto\"", RolVisitante.CIUDADANO, s);
         per.impostor = true;
         ArbolDialogo d = new ArbolDialogo("¡Buenas! Soy el dueño de la pizzería Don Toto. ¡Regalamos pizza por "
@@ -539,7 +651,7 @@ public final class Historia {
     }
 
     // ------------------------------------------------------------ dia 4
-    private static Caso daniela(Map<Integer, Publicacion> p, long s) {
+    private static Caso daniela(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Daniela Ruiz", RolVisitante.PERIODISTA, s);
         per.credencial = credencial(per, "Periodista", "Noticias Nova", "NN-7781");
         ArbolDialogo d = new ArbolDialogo("Hola, Daniela Ruiz, de Noticias Nova. Les traigo algo que les toca "
@@ -556,7 +668,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso caro(Map<Integer, Publicacion> p, long s) {
+    private static Caso caro(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Caro M.", RolVisitante.CIUDADANO, s);
         ArbolDialogo d = new ArbolDialogo("Hola, ¿esto lo pueden publicar? Es que nadie me hace caso.", "feliz");
         d.pregunta("¿Le pagaron por hablar mal de Café Nova?", "¡Ja! Ojalá. No, es que de verdad es aburrida.",
@@ -568,7 +680,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso ricky(Map<Integer, Publicacion> p, long s) {
+    private static Caso ricky(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Ricky Vélez", RolVisitante.AGENCIA, s);
         per.impostor = true;
         ArbolDialogo d = new ArbolDialogo("Hola, colega. Ricky, de ViralStorm. Vengo en son de paz... y con "
@@ -589,7 +701,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso senora(Map<Integer, Publicacion> p, long s) {
+    private static Caso senora(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Yolanda", RolVisitante.CIUDADANO, s);
         per.cara.edad = 2;
         ArbolDialogo d = new ArbolDialogo("Buenas tardes. Lo de los impuestos, ¿es verdad? Lo dicen en todos "
@@ -609,7 +721,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso julian(Map<Integer, Publicacion> p, long s) {
+    private static Caso julian(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Julián Soto", RolVisitante.CAMPANA, s);
         per.credencial = credencial(per, "Jefe de prensa", "Campaña Ramírez", "CR-0007");
         ArbolDialogo d = new ArbolDialogo("Buenas. Julián, de la campaña Ramírez. Solo queremos recordar el "
@@ -626,7 +738,7 @@ public final class Historia {
     }
 
     // ------------------------------------------------------------ dia 5
-    private static Caso lina(Map<Integer, Publicacion> p, long s) {
+    private static Caso lina(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Lina Vargas", RolVisitante.FUNCIONARIO, s);
         per.credencial = credencial(per, "Prensa", "Secretaría de Movilidad", "MO-5510");
         ArbolDialogo d = new ArbolDialogo("Buenos días. Movilidad. Transporte gratis hoy para que todos puedan "
@@ -641,7 +753,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso oscar(Map<Integer, Publicacion> p, long s) {
+    private static Caso oscar(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Óscar Durán", RolVisitante.FUNCIONARIO, s);
         per.credencial = credencial(per, "Delegado electoral", "Registraduría", "RG-0501");
         ArbolDialogo d = new ArbolDialogo("Buenos días. Registraduría. Necesitamos que todos sepan el horario.",
@@ -657,7 +769,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso urgente(Map<Integer, Publicacion> p, long s) {
+    private static Caso urgente(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("\"Mateo\"", RolVisitante.CIUDADANO, s);
         per.impostor = true;
         per.cara.pelo = 5;
@@ -677,7 +789,7 @@ public final class Historia {
         return c;
     }
 
-    private static Caso ramiro(Map<Integer, Publicacion> p, long s) {
+    private static Caso ramiro(TablaHash<Integer, Publicacion> p, long s) {
         Persona per = persona("Don Ramiro Castaño", RolVisitante.JEFE, s);
         per.cara.edad = 2;
         per.cara.accesorio = 1;
@@ -716,7 +828,11 @@ public final class Historia {
     public static String eleccion(JugadorVerificador j) {
         CiudadEstado c = j.ciudad;
         int d = c.desinformacion();
-        int part = Math.max(20, Math.min(85, (int) Math.round(30 + c.confianza * 0.3 + c.bienestar * 0.2 - d * 0.3)));
+        // el flujo maximo de votantes (Ford-Fulkerson): el panico en los barrios tapa las calles
+        int flujo = c.flujoVotantes(), ideal = Math.max(1, c.flujoVotantesIdeal());
+        double movilidad = (double) flujo / ideal;
+        int part = Math.max(20, Math.min(85, (int) Math.round(18 + c.confianza * 0.3 + c.bienestar * 0.2 - d * 0.3
+                + movilidad * 12)));
         String como;
         if (j.aproboDeepfake) {
             como = "la decidió un video falso";
@@ -728,6 +844,13 @@ public final class Historia {
             como = "la decidieron las propuestas";
         }
         return "Elección de alcalde: participación " + part + " %; " + como + ".";
+    }
+
+    /** Lo que dice el FLUJO MAXIMO (Ford-Fulkerson) sobre el dia de elecciones. */
+    public static String movilidad(JugadorVerificador j) {
+        CiudadEstado c = j.ciudad;
+        return "Por las calles llegaron " + c.flujoVotantes() + " votantes por hora a las urnas, de "
+                + c.flujoVotantesIdeal() + " posibles (flujo máximo).";
     }
 
     /** {titulo, texto} del final segun como quedo la ciudad. */

@@ -1,7 +1,7 @@
 package influenceinc.gui;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.SourceDataLine;
@@ -46,11 +46,29 @@ public final class Sonido {
         void mostrar(String texto);
     }
 
-    private static final ExecutorService HILO = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "sonido");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * PRODUCTOR-CONSUMIDOR: el juego (hilo de Swing) solo deja la melodia en
+     * esta cola sincronizada y sigue dibujando; un hilo aparte la saca y la
+     * reproduce. Asi un sonido nunca congela la pantalla.
+     */
+    private static final BlockingQueue<double[][]> PENDIENTES = new LinkedBlockingQueue<>();
+    private static final Thread HILO = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    reproducir(PENDIENTES.take());    // take() espera hasta que haya algo
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+        }
+    }, "sonido");
+
+    static {
+        HILO.setDaemon(true);                        // no impide cerrar el juego
+        HILO.start();
+    }
     private static Subtitulos subtitulos;
     private static boolean disponible = true;
 
@@ -68,7 +86,9 @@ public final class Sonido {
         if (!Tema.sonido || !disponible) {
             return;
         }
-        HILO.submit(() -> reproducir(tipo.notas));
+        if (PENDIENTES.size() < 6) {                 // si hay muchos en fila, se descartan
+            PENDIENTES.offer(tipo.notas);
+        }
     }
 
     private static void reproducir(double[][] notas) {

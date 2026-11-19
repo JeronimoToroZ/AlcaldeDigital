@@ -103,7 +103,7 @@ la fila a las 18:00 dejan circular sus rumores.
   - Elegir qué preguntar y qué herramienta usar, porque **todo gasta minutos**.
   - Encontrar la diferencia en la lupa.
   - Confrontar a tiempo y sellar bien.
-- **Tiempo limitado:** el reloj va de 9:00 a 18:00, lo que equivale a 6 minutos reales por día.
+- **Tiempo limitado:** el reloj va de 9:00 a 18:00, lo que equivale a 8 minutos reales por día.
   El bono de rapidez es +30 si aciertas en menos de 25 minutos de juego. El **modo relajado**
   quita el reloj, por inclusión.
 
@@ -250,3 +250,162 @@ correcta por paso), el x1,5 del influencer, la rueda de prensa y la alerta viral
   advertencia) y la campaña "Piensa antes de compartir" (baja la desinformación). Convierte el dinero
   ganado en ventaja: es un elemento motivador (sección 17 del enunciado).
 - `PruebaRoles` ahora también prueba el reinicio de herramientas, la validación y la tienda.
+
+---
+
+## 11. Versión 4: pantalla limpia, celular, pista de sellos, noticiero y temario completo
+
+> Esta sección reemplaza lo que las secciones 9.2, 9.3 y 10 dicen sobre la interfaz (bandeja de sellos,
+> monitor, libreta y noticiero de abajo). La lógica de los casos, los roles y los finales no cambió.
+> Capturas en `docs/capturas_v4/`.
+
+### 11.1 Qué se ve en pantalla (`gui/OficinaVista.java`)
+- Solo quedan fijas la **ventanilla** (el visitante detrás del vidrio) y el **cuadro de diálogo** con las
+  preguntas. Arriba sigue la barra (ayuda, estructuras, mapa y pausa).
+- **Se quitó la libreta de pistas.** Las pistas salen como avisos y quedan guardadas en cada app.
+- **El celular vive escondido** a la derecha (lengüeta "Celular · tecla P"). Sube solo cuando hay una
+  situación que lo pide: la llamada de Don Ramiro, un visitante que trae una publicación, el reporte del
+  corresponsal o un mensaje importante. Los mensajes menores solo hacen vibrar la lengüeta. Cuando el
+  celular sube, la escena se corre a la izquierda.
+- **Los sellos solo aparecen al decidir**: botón "Decidir el sello" (D) o directamente Z X C V B.
+- La credencial solo aparece sobre el mostrador si el visitante trae una.
+
+### 11.2 El celular (`gui/CelularVista.java`, `logica/Telefono.java`)
+Dibujado como un teléfono real: marco, isla de la cámara, barra de estado (hora del juego, señal que se
+cae con el apagón, batería que baja con el día), pantalla de inicio con widget de la ciudad, dock y barra
+de gestos. Apps:
+
+| App | Qué hace | Estructura |
+|---|---|---|
+| Civitas | La publicación del caso; allí cae el sello | — |
+| Mensajes | Chats con respuestas rápidas ("¿Y la fuente?") | **Tabla hash** contacto → conversación |
+| Teléfono | Agenda en orden alfabético y "Llamar a la institución" (K) | **ABB** + recorrido inorden iterativo |
+| Noticias | Últimas horas del día, tendencias y "Repetir" el noticiero | **Shell sort** (tendencias) |
+| Perfil, Directorio, Lupa, Imagen, Mapa, Red | Las herramientas de antes, ahora como apps (Q W E R T Y) | AVL, Dijkstra, BFS/DFS, Bellman-Ford, Floyd-Warshall |
+| Habilidad | El minijuego del rol (U) | — |
+| Tienda | Abre la tienda (S) | — |
+
+Las notificaciones llegan a una **cola FIFO** y se muestran una por una.
+
+### 11.3 Pista de sellos estilo Pump It Up (`logica/PistaSellos.java`, `gui/JuegoSellos.java`)
+1. El jugador escoge el sello (o lo pide directo con Z X C V B).
+2. Cuenta regresiva 3, 2, 1.
+3. Por **5 carriles** (flechas ↙ ↖ ● ↗ ↘, teclas Z Q S E C o 1-5, o clic) caen iconos de sellos a
+   **velocidad 1.5** (`PistaSellos.VELOCIDAD`; 1.0 = 200 píxeles del lienzo por segundo).
+4. Con **4 aciertos** del sello escogido, el sello se activa y cae sobre la publicación del celular.
+5. Pisar un icono de otro sello o dejar pasar el bueno es un fallo. Con **3 fallos** el sello no sale y
+   llega una **advertencia** (`Jornada.fallarSello()`): se pierde una "vida". El seguro de la tienda la
+   puede absorber. Pisar un carril vacío no castiga.
+
+Estructuras: las notas se generan por carril, se mezclan ordenándolas por tiempo con **heap sort** y
+esperan en una **cola** hasta que les toca caer.
+
+### 11.4 Noticiero y narrativa por rol (`logica/Noticiero.java`, `gui/TeleVista.java`, `logica/Historia.java`)
+- **Edición de la mañana:** apertura en el estudio con la presentadora (Lucía Prado), nota **en vivo** desde un
+  barrio con el reportero (Tato Rincón), un bloque de **tu rol** y un **giro de última hora** que anticipa
+  el caso del día.
+- **Edición de la noche:** tus titulares del día, ordenados por impacto (**inserción**), el termómetro de la
+  ciudad y un **avance** de mañana. El día 5 informa el flujo de votantes hacia las urnas.
+- **Última hora durante el día:** franja roja sobre el vidrio con cada sello, evento o pánico.
+- **Según el rol**, a cada jugador le escribe alguien distinto (`Historia.mensajesDelDia`): el ciudadano
+  recibe el grupo de vecinos, el periodista a su editora, el influencer a su mánager y el candidato a su jefa
+  de campaña. Don Ramiro les escribe a todos y en el día 5 avisa que "ya va para allá".
+- **En red**, cada titular viaja por **sockets** (mensaje `NOT`/`NOTICIA`) y aparece en la última hora de
+  los otros jugadores.
+
+### 11.5 Personajes (`gui/Caras.java`)
+Se redibujaron: cabeza con cráneo y mentón (no elipse), sombreado suave, ojos con párpado, iris y brillo,
+cejas rellenas, nariz y labios, rubor, pelo recortado contra la cabeza con `Area`, ropa con cuello, saco y
+corbata. Las zonas de la lupa (pelo, cejas, ojos/gafas, lunar) quedaron en el mismo lugar.
+
+### 11.6 Dónde está cada tema del semestre
+
+| Tema | Archivo y método | Dónde se ve en el juego |
+|---|---|---|
+| Recorridos recursivos de árbol binario | `ArbolBinarioBusqueda.preordenRecursivo / inordenRecursivo / postordenRecursivo` | Prueba y visor (F2) |
+| Recorridos iterativos | `preordenIterativo` (pila), `inordenIterativo` (pila), `postordenIterativo` (dos pilas), `porNiveles` (cola) | App Teléfono (inorden) |
+| ABB: insertar, buscar, eliminar (hoja, 1 hijo, 2 hijos con sucesor) | `ArbolBinarioBusqueda` | Agenda del celular |
+| AVL | `ArbolAVLGenerico` (sin cambios) | App Directorio |
+| BFS / DFS | `GrafoRed.bfsOleadas`, `dfsAlcanzables`; `GrafoCiudad.saltosDesde` | App Red, pánico |
+| Dijkstra | `GrafoCiudad.caminoMasCorto`, `GrafoRed.caminoMinimo` | Corresponsal (app Mapa) |
+| Bellman-Ford | `GrafoRed.bellmanFord` (aristas bot→bot pesan −1) | App Red: **cámara de eco** = ciclo negativo |
+| Floyd-Warshall | `GrafoCiudad.floydWarshall`, `centro` | App Mapa (minutos a cada barrio) y estudio del noticiero |
+| Kruskal (con conjuntos disjuntos) | `GrafoCiudad.kruskal` | **Red de alerta**: al acertar, la calma viaja por ese árbol |
+| Prim | `GrafoCiudad.prim` | Cobertura en vivo del noticiero (crece cada día) |
+| Ford-Fulkerson | `GrafoCiudad.flujoMaximo` (DFS para caminos aumentantes) | Votantes por hora el día de elecciones; el pánico tapa calles |
+| Burbuja | `Ordenamientos.burbuja` | Marcador de la partida en red |
+| Inserción | `Ordenamientos.insercion` | Titulares del noticiero; calles en Kruskal |
+| Shell | `Ordenamientos.shell` | Tendencias de la app Noticias |
+| Quick sort | `Ordenamientos.quick` | Ranking final de jugadores |
+| Heap sort | `Ordenamientos.heap` | Notas de la pista de sellos |
+| Tabla hash / diccionario | `TablaHash` (encadenamiento, rehash al 0,75) | Mensajes del celular; publicaciones de la historia |
+| Colas | `ArrayDeque` | Fila de la ventanilla, notificaciones, notas de la pista |
+| Hilos | `Sonido` (productor-consumidor con `LinkedBlockingQueue`), un hilo por conexión en `ServidorOficina` | Sonido sin trabar la pantalla |
+| Sockets | `red/ServidorOficina`, `red/ClienteOficina` | Lobby, semilla, marcador y titulares en vivo |
+
+También se simplificó código que no era del nivel del curso: la propagación del grafo ya no recibe
+`Predicate`/`ToDoubleFunction` sino un `double factor`, y los comparadores de Dijkstra son clases anónimas.
+
+### 11.7 Pruebas
+- `pruebas/PruebaTemario.java` (nueva): recorridos recursivos = iterativos, ABB, tabla hash (colisión
+  `"Aa"`/`"BB"` y rehash), los cinco ordenamientos, Floyd-Warshall = Dijkstra en los 64 pares,
+  Kruskal = Prim, Ford-Fulkerson (red de libro = 23) y Bellman-Ford (cámara de eco).
+- `PruebaRoles` ahora también prueba la pista de sellos (velocidad 1.5, 4 aciertos, 3 fallos = advertencia,
+  seguro), el celular (cola, ABB, chats) y el noticiero por rol.
+- `PruebaJuego` prueba además el titular que viaja por sockets.
+
+---
+
+## 12. Versión 5: pista de sellos directa, noticiero, fondo vivo y red sincronizada
+
+> Reemplaza lo que la sección 11.3 dice de la pista de sellos. Capturas en `docs/capturas_v5/`.
+
+### 12.1 Pista de sellos (`logica/PistaSellos.java`, `gui/JuegoSellos.java`)
+- **Empieza enseguida**: "Decidir el sello" (D) o cualquiera de **Z X C V** abre la pista sin escoger antes.
+  El celular muestra la publicación y la pista sale en un **panel pequeño** al lado del visitante.
+- **4 carriles, teclas Z X C V** (o clic sobre el círculo). Velocidad de caída **1.1**.
+- Caen **círculos** con todos los sellos del día, mezclados en "bolsas" (en cada ronda sale cada sello una vez).
+  Los receptores son círculos con los colores de la paleta (cobre, lila, salvia, dorado) y cada sello tiene
+  ahora un color de la paleta (`OficinaVista.colorSello`).
+- El **primer círculo que se acierta decide el sello**; con **4 iguales** se activa y cae sobre la publicación.
+- **La única forma de perder una vida al instante** es pisar un círculo de **otro** sello
+  (`Jornada.fallarSello()`; el seguro de la tienda la puede absorber).
+- **Margen de 10**: los círculos que pasan sin pisarse no castigan. Si pasan 10, la pista se cierra sin
+  castigo y se puede volver a abrir. Pisar un carril vacío tampoco castiga.
+- Estructuras: heap sort (notas por tiempo) y cola FIFO (salen en orden).
+
+### 12.2 Noticiero (`gui/TeleVista.java`, `OficinaVista.noticiero`)
+Cabecera del canal, señal a pantalla grande con cámara que se acerca, rótulo que entra deslizándose,
+cortinilla de cobre entre bloques, **escaleta** del programa con el bloque actual y su progreso,
+**termómetro con los 6 indicadores** de la ciudad y cinta de titulares a todo lo ancho.
+
+### 12.3 Fondo y ritmo
+- Fondo vivo (`OficinaVista.fondoVentana`): luz que cambia con la hora del juego, un haz de sol que barre la
+  pared y motas de luz que suben, todo en la paleta. Con alto contraste queda negro y quieto.
+- El reloj va más lento: 9 horas de juego en **8 minutos** reales (`Jornada.VELOCIDAD`).
+
+### 12.4 Indicadores y consecuencias
+- El widget del celular muestra los **6 indicadores** con barra, siempre actualizados.
+- Después de cada sello, el resultado muestra cuánto subió o bajó cada indicador
+  (por ejemplo "Confianza +2", "Desinformación −3").
+- El resultado dice además **a cuántas cuentas** llegó la publicación y **en cuántas oleadas** del BFS
+  (quiénes, cuántos y qué tan rápido).
+
+### 12.5 Cliente-servidor: qué sincroniza el servidor (`red/ServidorOficina.java`)
+
+| Estado | Cómo | Mensajes |
+|---|---|---|
+| Jugadores | Tabla hash propia nombre → datos | `HOLA`, `LOBBY` |
+| Puntuaciones | Marcador ordenado por inserción | `RES`, `MARCADOR` |
+| Publicaciones | Lista de sellos de cada jugador; se reenvían como noticia | `PUB`, `NOTICIA` |
+| Relaciones | Cuentas falsas reportadas: se **eliminan del grafo social de todos** | `REL`, `RELACION` |
+| Eventos | Apagón, viral, pánico... de cada jugador | `EVT`, `NOTICIA` |
+| Turnos | Nadie empieza el día d+1 hasta que todos terminen el d (barrera) | `FIN`, `ESPERA`, `TURNO` |
+
+Cada conexión tiene su propio **hilo**; los métodos que tocan el estado son `synchronized`. Si alguien se
+desconecta, deja de frenar a los demás. `PruebaJuego` lo prueba con un servidor y dos clientes reales.
+
+### 12.6 Árbol aplicado a la clasificación de publicaciones
+`JugadorVerificador.archivo` es un **ABB** donde cada publicación sellada se inserta con clave
+`credibilidad × 1000 + id`. La app Civitas muestra "Tu archivo" con el recorrido **inorden** (de la menos
+creíble a la más creíble). Lo prueba `PruebaRoles`.

@@ -8,12 +8,14 @@ import influenceinc.logica.Habilidades;
 import influenceinc.logica.Historia;
 import influenceinc.logica.Jornada;
 import influenceinc.logica.JugadorVerificador;
+import influenceinc.logica.Noticiero;
 import influenceinc.logica.Partida;
+import influenceinc.logica.PistaSellos;
+import influenceinc.logica.Telefono;
 import influenceinc.logica.Tienda;
 import influenceinc.modelo.Cuenta;
 import influenceinc.modelo.Herramienta;
 import influenceinc.modelo.Persona;
-import influenceinc.modelo.Publicacion;
 import influenceinc.modelo.RolJugador;
 import influenceinc.modelo.Veredicto;
 import java.awt.AlphaComposite;
@@ -38,19 +40,20 @@ import java.util.Random;
 
 /**
  * LA OFICINA. Todo lo que ve el jugador durante un dia se dibuja aqui con
- * Java2D, sobre un lienzo logico de 1440 x 860 que se escala a la ventana
- * (el fondo "fondo2" cubre todo, asi no quedan franjas vacias).
+ * Java2D, sobre un lienzo logico de 1440 x 860 que se escala a la ventana.
  *
- *  ┌ barra: jugador y rol · dia · reloj · fila · advertencias · puntos · [ayuda][estructura][mapa][pausa] ┐
- *  │ VENTANA DE INTERROGATORIO │   CELULAR    │ MONITOR (herramientas + habilidad)  │
- *  │ (cielo segun la hora,     │  (la noticia │                                     │
- *  │  billetera si hay carne)  │   en Civitas)│                                     │
- *  │ globo de dialogo          │              │ LIBRETA DE PISTAS                   │
- *  │ PREGUNTAS (se arrastran)  │   SELLOS     │ INDICADORES + noticiero             │
- *  └──────────────────────────────────────────────────────────────────────────────┘
- *
- * Los 4 botones de la barra estan en TODAS las pantallas de TODOS los roles y
- * su contenido cambia segun el rol del jugador activo.
+ * Version 4: pantalla limpia. Solo se ven la VENTANILLA (el visitante detras
+ * del vidrio) y el cuadro de DIALOGO con las preguntas. Lo demas aparece
+ * cuando hace falta:
+ *  - el CELULAR (gui/CelularVista) vive escondido a la derecha y sube con
+ *    una llamada, una notificacion importante o la tecla P; las herramientas
+ *    de investigacion son apps del celular;
+ *  - los SELLOS solo salen al decidir (boton "Decidir el sello", D o Z X C V):
+ *    la pista estilo Pump It Up de gui/JuegoSellos arranca enseguida en un
+ *    panel pequeno al lado del visitante;
+ *  - el NOTICIERO abre y cierra cada dia (gui/TeleVista) y lanza avisos de
+ *    "ultima hora" sobre la ventanilla.
+ * Arriba sigue la barra con ayuda, estructuras, mapa y pausa.
  */
 public class OficinaVista extends Lienzo {
 
@@ -63,31 +66,31 @@ public class OficinaVista extends Lienzo {
         void alTerminarDia(Jornada j);
 
         void alSalir();
+
+        /** Paso un evento del dia (para contarselo a los demas jugadores en red). */
+        void alEvento(Jornada j, String texto);
     }
 
-    private enum Estado { TURNO, LLAMADA, VACIO, ENTRANDO, ATENDIENDO, SELLANDO, RESULTADO, SALIENDO, FIN_DIA }
+    private enum Estado { TURNO, ESPERA, NOTICIAS, LLAMADA, VACIO, ENTRANDO, ATENDIENDO, SELLANDO, RESULTADO, SALIENDO, FIN_DIA }
 
     /** Capas del juego (tapan el escritorio). */
     private enum Juego { NADA, LUPA, BILLETERA, MINIJUEGO }
 
-    /** Paneles de los 4 botones de la barra (no tapan la barra). */
+    /** Paneles de los botones de la barra (no tapan la barra). */
     private enum Panel { NADA, AYUDA, ESTRUCTURAS, PAUSA, MAPA, TIENDA }
 
     // zonas de la pantalla
     private static final int BARRA = 64;
-    private static final Rectangle VENTANA = new Rectangle(16, 76, 540, 330);
-    private static final Rectangle GLOBO = new Rectangle(16, 416, 540, 94);
-    private static final Rectangle PREG = new Rectangle(16, 520, 540, 324);
-    private static final Rectangle CEL = new Rectangle(580, 70, 310, 599);
-    private static final Rectangle SELLOS = new Rectangle(568, 678, 334, 166);
-    private static final Rectangle MONITOR = new Rectangle(914, 76, 510, 432);
-    private static final Rectangle LIBRETA = new Rectangle(914, 518, 510, 270);
-    /** Noticiero (los indicadores de la ciudad ahora estan dentro del boton MAPA). */
-    private static final Rectangle TV = new Rectangle(914, 798, 510, 46);
+    /** Ancho de la escena (ventanilla + dialogo). Se corre a la izquierda cuando sube el celular. */
+    private static final int ESCENA_W = 1000;
+    private static final int X_CENTRADA = (W - ESCENA_W) / 2, X_CORRIDA = 36;
+    private Rectangle ventanaR = new Rectangle(X_CENTRADA, 78, ESCENA_W, 466);
+    private Rectangle dialogoR = new Rectangle(X_CENTRADA, 556, ESCENA_W, 288);
 
     private final Oyente oyente;
     final Avisos avisos = new Avisos();
     private final VistaRed3D red3d = new VistaRed3D();
+    final CelularVista cel = new CelularVista(this);
     private final Random azar = new Random();
     private boolean activo;
 
@@ -96,7 +99,6 @@ public class OficinaVista extends Lienzo {
     private Estado estado = Estado.VACIO;
     private Juego juego = Juego.NADA;
     private Panel panel = Panel.NADA;
-    private int tab = 0;                 // 0..5 herramientas, 6 = habilidad del rol
     private Herramienta escaneando;
     private double escaneoT;
     private int paginaAyuda;
@@ -117,22 +119,31 @@ public class OficinaVista extends Lienzo {
     private int lineaLlamada;
     private String[] llamada = new String[0];
 
+    // noticiero
+    private List<Noticiero.Segmento> segmentos = new ArrayList<>();
+    private int segIdx;
+    private double segLetras;
+    private double segInicioT;
+    private boolean noticiasNoche, reviendo;
+    private Estado antesDeRever;
+    private final List<String> cinta = new ArrayList<>();
+    private String ultimaHoraTxt;
+    private double ultimaHoraT = -10;
+
     // sellos
     private Veredicto selloV;
     private double selloT;
     private Jornada.Resultado ultimo;
-    private final List<String> ticker = new ArrayList<>();
-    private double tickerX = 0;
+    /** Cuanto cambio cada indicador con el ultimo sello (retroalimentacion de consecuencias). */
+    private final int[] cambioIndicadores = new int[6];
     private String llamadaInst;
     private List<String> marcadorRed = new ArrayList<>();
+    private List<String> faltanRed = new ArrayList<>();
 
-    // arrastre
-    private Veredicto arrastraSello;
+    // arrastre de preguntas
     private NodoDialogo arrastraPregunta;
     private int pressX, pressY, dragX, dragY;
-    private final List<Object[]> zonasSellos = new ArrayList<>();
     private final List<Object[]> zonasPreguntas = new ArrayList<>();
-    private int libretaScroll;
     private int lupaFallos;
     private String lupaMsg;
     // aviso flotante rojo (herramienta que no aplica, compra imposible...)
@@ -145,14 +156,14 @@ public class OficinaVista extends Lienzo {
     public OficinaVista(Oyente oyente) {
         super(W, H, false);
         this.oyente = oyente;
-        avisos.haciaArriba = true;
+        avisos.haciaArriba = false;
         avisos.maxVisibles = 3;
-        avisos.subtituloY = 646;
+        avisos.subtituloY = 67;
         Sonido.setSubtitulos(avisos);
     }
 
     // ==================================================================
-    // Acceso para los mini-juegos
+    // Acceso para el celular y los mini-juegos
     // ==================================================================
 
     Jornada jornada() {
@@ -161,6 +172,38 @@ public class OficinaVista extends Lienzo {
 
     Caso caso() {
         return caso;
+    }
+
+    boolean atendiendo() {
+        return estado == Estado.ATENDIENDO && caso != null;
+    }
+
+    boolean sellando() {
+        return estado == Estado.SELLANDO;
+    }
+
+    boolean hablando() {
+        return letras < texto.length();
+    }
+
+    long semilla() {
+        return partida == null ? 1 : partida.semilla;
+    }
+
+    Herramienta escaneando() {
+        return escaneando;
+    }
+
+    double escaneoT() {
+        return escaneoT;
+    }
+
+    String llamadaInst() {
+        return llamadaInst;
+    }
+
+    VistaRed3D red3d() {
+        return red3d;
     }
 
     void avisar(String titulo, String txt) {
@@ -180,12 +223,67 @@ public class OficinaVista extends Lienzo {
                     exito ? Tema.bien() : Tema.mal(), 0);
         }
         Sonido.tocar(exito ? Sonido.Tipo.LOGRO : Sonido.Tipo.MAL);
-        tab = Herramienta.values().length;
+        cel.abrir(CelularVista.App.HABILIDAD);
     }
 
     void anotarViral(boolean exito, int puntos) {
-        ticker.add(0, exito ? "CIVITAS: una alerta viral fue frenada a tiempo" : "CIVITAS: un rumor viral sigue circulando");
+        ultimaHora(exito ? "Una alerta viral fue frenada a tiempo en Civitas." : "Un rumor viral sigue circulando por Civitas.");
         avisos.agregar("Alerta viral", (puntos >= 0 ? "+" : "") + puntos + " puntos", exito ? Tema.bien() : Tema.mal(), 0);
+    }
+
+    /** Titular que llega de otro jugador por la red (sockets). */
+    public void noticiaDeRed(String quien, String titular) {
+        if (j == null) {
+            return;
+        }
+        String txt = "En la ventanilla de " + quien + ": " + titular;
+        ultimaHora(txt);
+    }
+
+    /**
+     * RELACIONES sincronizadas por el servidor: otro jugador elimino una cuenta
+     * falsa; se elimina tambien de MI grafo social (con sus aristas).
+     */
+    public void relacionDeRed(String quien, String idCuenta, String cuenta) {
+        if (j == null) {
+            return;
+        }
+        CiudadEstado c = j.jugador.ciudad;
+        if (c.red.contiene(idCuenta)) {
+            c.red.eliminarVertice(idCuenta);
+        }
+        ultimaHora(quien + " reportó " + cuenta + ": la cuenta falsa sale de Civitas para todos.");
+    }
+
+    /** TURNOS en red: termine mi dia y espero a que los demas terminen el suyo. */
+    public void esperarTurno(List<String> faltan) {
+        estado = Estado.ESPERA;
+        faltanRed = faltan;
+        cel.cerrar();
+    }
+
+    public void setFaltan(List<String> faltan) {
+        faltanRed = faltan;
+    }
+
+    public boolean esperando() {
+        return estado == Estado.ESPERA;
+    }
+
+    /** Aviso de "ultima hora": franja sobre la ventanilla, cinta del noticiero y app Noticias. */
+    private void ultimaHora(String txt) {
+        if (txt == null || txt.isEmpty()) {
+            return;
+        }
+        ultimaHoraTxt = txt;
+        ultimaHoraT = t;
+        cinta.add(0, txt);
+        while (cinta.size() > 8) {
+            cinta.remove(cinta.size() - 1);
+        }
+        if (j != null) {
+            j.anotarNoticia(txt);
+        }
     }
 
     // ==================================================================
@@ -209,12 +307,15 @@ public class OficinaVista extends Lienzo {
         mini = null;
         viralEnEspera = null;
         texto = "";
-        ticker.clear();
-        ticker.add("NOTICIAS NOVA · Día " + j.dia + " de la semana electoral · " + Historia.TITULOS[j.dia]);
+        cinta.clear();
+        ultimaHoraTxt = null;
+        cel.modoLlamada(false);
+        cel.inicio();
+        cel.cerrar();
         if (partida.jugadores.size() > 1) {
             estado = Estado.TURNO;
         } else {
-            empezarLlamada();
+            empezarNoticias();
         }
     }
 
@@ -226,15 +327,108 @@ public class OficinaVista extends Lienzo {
         marcadorRed = m;
     }
 
-    private RolJugador rol() {
+    RolJugador rol() {
         return j == null ? RolJugador.PERIODISTA : j.jugador.rol;
     }
 
+    // ------------------------------------------------------------ noticiero
+    private void empezarNoticias() {
+        segmentos = Noticiero.manana(j.dia, j.jugador);
+        for (Noticiero.Segmento s : segmentos) {
+            if (s.tipo.equals("giro")) {
+                j.anotarNoticia(s.texto);
+                cinta.add(0, s.texto);
+            } else if (s.tipo.equals("vivo")) {
+                cinta.add(s.texto);
+            }
+        }
+        cinta.add("Faltan " + (Historia.DIAS - j.dia) + " días para elegir alcalde en Ciudad Nova");
+        segIdx = 0;
+        segLetras = 0;
+        segInicioT = t;
+        noticiasNoche = false;
+        reviendo = false;
+        estado = Estado.NOTICIAS;
+        Sonido.tocar(Sonido.Tipo.TURNO);
+    }
+
+    /** Desde la app Noticias: vuelve a ver la edicion de la manana (el reloj no corre). */
+    void reverNoticiero() {
+        if (estado == Estado.NOTICIAS || estado == Estado.SELLANDO || juego != Juego.NADA) {
+            return;
+        }
+        antesDeRever = estado;
+        segmentos = Noticiero.manana(j.dia, j.jugador);
+        segIdx = 0;
+        segLetras = 0;
+        segInicioT = t;
+        noticiasNoche = false;
+        reviendo = true;
+        estado = Estado.NOTICIAS;
+        cel.cerrar();
+    }
+
+    private void avanzarNoticia() {
+        if (segIdx >= segmentos.size()) {
+            terminarNoticias();
+            return;
+        }
+        if (segLetras < segmentos.get(segIdx).texto.length()) {
+            segLetras = segmentos.get(segIdx).texto.length();
+            return;
+        }
+        segIdx++;
+        segLetras = 0;
+        segInicioT = t;
+        if (segIdx >= segmentos.size()) {
+            terminarNoticias();
+        } else {
+            Sonido.tocar(Sonido.Tipo.CLIC);
+        }
+    }
+
+    private void terminarNoticias() {
+        if (reviendo) {
+            reviendo = false;
+            estado = antesDeRever;
+            return;
+        }
+        if (noticiasNoche) {
+            estado = Estado.FIN_DIA;
+        } else {
+            empezarLlamada();
+        }
+    }
+
+    /** Cierra la jornada: noticiero de la noche y despues el resumen del dia. */
+    private void terminarDia() {
+        j.cerrar();
+        caso = null;
+        juego = Juego.NADA;
+        mini = null;
+        cel.modoLlamada(false);
+        cel.cerrar();
+        segmentos = Noticiero.noche(j);
+        segIdx = 0;
+        segLetras = 0;
+        segInicioT = t;
+        noticiasNoche = true;
+        reviendo = false;
+        cinta.clear();
+        for (Jornada.Resultado r : j.getResultados()) {
+            cinta.add(r.titular);
+        }
+        estado = Estado.NOTICIAS;
+        Sonido.tocar(Sonido.Tipo.ALERTA);
+    }
+
+    // ------------------------------------------------------------ llamada del jefe (en el celular)
     private void empezarLlamada() {
         estado = Estado.LLAMADA;
         llamada = Historia.LLAMADAS[j.dia];
         lineaLlamada = 0;
-        decir("Don Ramiro (teléfono)", llamada[0], "neutral");
+        cel.modoLlamada(true);
+        decir("Don Ramiro · por teléfono", llamada[0], "neutral");
         Sonido.tocar(Sonido.Tipo.TELEFONO);
     }
 
@@ -245,51 +439,58 @@ public class OficinaVista extends Lienzo {
         }
         lineaLlamada++;
         if (lineaLlamada < llamada.length) {
-            decir("Don Ramiro (teléfono)", llamada[lineaLlamada], "neutral");
+            decir("Don Ramiro · por teléfono", llamada[lineaLlamada], "neutral");
         } else {
-            estado = Estado.VACIO;
-            texto = "";
-            for (String c : j.cambiosDeReglas) {
-                avisos.agregar("Cambio de reglas", c, Tema.acento2(), 0);
-            }
-            if (j.dia == 1) {
-                avisos.agregar("Cómo se juega", "1) Haz pasar al visitante. 2) Arrastra preguntas hacia él. "
-                        + "3) Investiga en el monitor" + (rol().tieneMiniJuego() ? " y usa tu habilidad (pestaña \"Habilidad\")" : "")
-                        + ". 4) Arrastra un sello sobre el celular. Botón de ayuda arriba.", Tema.acento(), 300);
-            }
-            for (Herramienta h : Herramienta.values()) {
-                if (h.dia == j.dia && j.delRol(h)) {
-                    avisos.agregar("Herramienta nueva", h.nombre, Tema.bien(), 600);
-                }
-            }
-            Sonido.tocar(Sonido.Tipo.TURNO);
+            colgar();
         }
     }
 
+    /** Termina la llamada de la manana (boton rojo del celular o la ultima linea). */
+    void colgar() {
+        if (estado != Estado.LLAMADA) {
+            return;
+        }
+        cel.modoLlamada(false);
+        cel.inicio();
+        cel.cerrar();
+        estado = Estado.VACIO;
+        texto = "";
+        for (String c : j.cambiosDeReglas) {
+            avisos.agregar("Cambio de reglas", c, Tema.acento2(), 0);
+        }
+        if (j.dia == 1) {
+            avisos.agregar("Cómo se juega", "1) Haz pasar al visitante. 2) Pregúntale (arrastra la tarjeta o 1-6). "
+                    + "3) Investiga con las apps del celular (P). 4) Cuando sepas, \"Decidir el sello\" (D).", Tema.acento(), 300);
+        }
+        for (Herramienta h : Herramienta.values()) {
+            if (h.dia == j.dia && j.delRol(h)) {
+                avisos.agregar("App nueva en el celular", h.nombre, Tema.bien(), 600);
+            }
+        }
+        Sonido.tocar(Sonido.Tipo.TURNO);
+    }
+
+    // ------------------------------------------------------------ visitantes
     private void hacerPasar() {
         if (j.isTerminada()) {
             return;
         }
         caso = j.siguiente();
         if (caso == null) {
-            j.cerrar();
-            estado = Estado.FIN_DIA;
+            terminarDia();
             return;
         }
         estado = Estado.ENTRANDO;
         entradaT = 0;
         // cliente nuevo: TODAS las herramientas se reinician y quedan disponibles otra vez
-        tab = 0;
         escaneando = null;
         escaneoT = 0;
         if (juego == Juego.LUPA || juego == Juego.BILLETERA) {
             juego = Juego.NADA;
         }
-        arrastraSello = null;
         arrastraPregunta = null;
         llamadaInst = null;
         ultimo = null;
-        libretaScroll = 0;
         lupaFallos = 0;
         lupaMsg = null;
         decir(caso.visitante.nombre, caso.dialogo.getRaiz().respuesta, caso.dialogo.getRaiz().expresion);
@@ -315,29 +516,83 @@ public class OficinaVista extends Lienzo {
         j.preguntar(n);
         decir(caso.visitante.nombre, n.respuesta, n.expresion);
         if (n.pista != null) {
-            avisos.agregar("Anotado en la libreta", n.pista, Tema.acento2(), 0);
+            avisos.agregar("Pista", n.pista, Tema.acento2(), 0);
         }
     }
 
-    private void sellar(Veredicto v) {
-        if (estado != Estado.ATENDIENDO || caso == null) {
+    // ------------------------------------------------------------ sellos (solo cuando hay que decidir)
+    /**
+     * Abre la pista de sellos ENSEGUIDA (sin escoger antes): el celular muestra
+     * la publicacion y al lado de la ventanilla empiezan a caer los circulos.
+     */
+    private void decidir() {
+        if (estado != Estado.ATENDIENDO || caso == null || juego != Juego.NADA) {
+            return;
+        }
+        arrastraPregunta = null;
+        cel.abrir(CelularVista.App.CIVITAS);
+        mini = new JuegoSellos(this);
+        juego = Juego.MINIJUEGO;
+    }
+
+    /** Donde va el panel de la pista: pegado al lado derecho de la ventanilla, sin tapar al visitante. */
+    Rectangle zonaPista(int ancho, int alto) {
+        return new Rectangle(ventanaR.x + ventanaR.width - ancho - 16, ventanaR.y + 14, ancho, alto);
+    }
+
+    /** La pista salio bien: el sello cae sobre la publicacion en el celular. */
+    void selloActivado(Veredicto v) {
+        if (estado != Estado.ATENDIENDO || caso == null || v == null) {
             return;
         }
         selloV = v;
         selloT = 0;
         estado = Estado.SELLANDO;
+        cel.abrir(CelularVista.App.CIVITAS);
+    }
+
+    /** Pisar un icono de otro sello: se pierde una vida al instante (salvo seguro). */
+    void vidaPerdidaEnPista(boolean advertencia) {
+        if (advertencia) {
+            avisos.agregar("ADVERTENCIA " + j.jugador.advertencias + "/" + JugadorVerificador.MAX_ADVERTENCIAS,
+                    "Pisaste un círculo de otro sello: perdiste una vida.", Tema.mal(), 0);
+        } else {
+            avisos.agregar("Seguro de reputación", "Pisaste otro sello, pero el seguro absorbió la advertencia.", Tema.acento2(), 0);
+        }
+    }
+
+    /** Con la ultima advertencia en la pista, Don Ramiro despide al verificador. */
+    void despedidoEnPista() {
+        ultimaHora("Influence, Inc. despide a su verificador en plena semana electoral.");
+        terminarDia();
+    }
+
+    /** Se pasaron 10 iconos sin decidir: no hay castigo, se puede volver a abrir. */
+    void pistaSinDecidir() {
+        avisos.agregar("Sin sello todavía", "Se pasaron " + PistaSellos.MARGEN + " círculos. Piensa y vuelve con D (o Z X C V).",
+                Tema.acento2(), 0);
+    }
+
+    /** Los 6 indicadores de Ciudad Nova en un arreglo (para mostrar cuanto cambio cada uno). */
+    private static int[] indicadores(CiudadEstado c) {
+        return new int[]{c.verificada, c.confianza, c.convivencia, c.bienestar, c.desinformacion(), c.conflictos};
     }
 
     private void terminarSello() {
+        int[] antes = indicadores(j.jugador.ciudad);
         Jornada.Resultado r = j.sellar(selloV);
         if (r == null) {
             estado = Estado.ATENDIENDO;
             return;
         }
         ultimo = r;
+        int[] despues = indicadores(j.jugador.ciudad);
+        for (int i = 0; i < 6; i++) {
+            cambioIndicadores[i] = despues[i] - antes[i];
+        }
         Sonido.tocar(Sonido.Tipo.SELLO);
         Sonido.tocar(r.efecto.acierto ? Sonido.Tipo.BIEN : Sonido.Tipo.MAL);
-        ticker.add(0, "ÚLTIMA HORA: " + r.titular);
+        ultimaHora(r.titular);
         Persona p = caso.visitante;
         if (r.veredicto == Veredicto.DENUNCIAR && p.impostor) {
             decir(p.nombre, caso.confrontado ? "..." : caso.confesion, "roto");
@@ -351,6 +606,13 @@ public class OficinaVista extends Lienzo {
         for (String l : r.logrosNuevos) {
             avisos.agregar("¡Logro!", l, Tema.DORADO, 400);
             Sonido.tocar(Sonido.Tipo.LOGRO);
+        }
+        if (!r.calmados.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (int z : r.calmados) {
+                sb.append(sb.length() == 0 ? "" : ", ").append(CiudadEstado.ZONAS[z]);
+            }
+            avisos.agregar("Red de alerta (Kruskal)", "La calma llegó también a: " + sb + ".", Tema.bien(), 300);
         }
         if (r.advertencia) {
             avisos.agregar("ADVERTENCIA " + j.jugador.advertencias + "/" + JugadorVerificador.MAX_ADVERTENCIAS,
@@ -369,10 +631,13 @@ public class OficinaVista extends Lienzo {
     private void despedirVisitante() {
         estado = Estado.SALIENDO;
         entradaT = 0;
+        cel.inicio();
+        cel.cerrar();
     }
 
-    private void usarHerramienta(Herramienta h) {
-        tab = h.ordinal();
+    // ------------------------------------------------------------ apps de investigacion
+    void usarHerramienta(Herramienta h) {
+        cel.abrir(CelularVista.App.de(h));
         if (caso == null || estado != Estado.ATENDIENDO || escaneando != null) {
             return;
         }
@@ -391,7 +656,7 @@ public class OficinaVista extends Lienzo {
         }
     }
 
-    private void abrirLupa() {
+    void abrirLupa() {
         String no = j == null ? "..." : j.motivoNoAplica(Herramienta.LUPA);
         if (no != null) {
             if (j != null && caso != null) {
@@ -403,14 +668,18 @@ public class OficinaVista extends Lienzo {
         lupaMsg = null;
     }
 
-    private void usarHabilidad() {
+    void abrirTienda() {
+        panel = Panel.TIENDA;
+        arrastraPregunta = null;
+    }
+
+    void usarHabilidad() {
         if (!rol().tieneMiniJuego()) {
-            avisos.agregar("Tu habilidad", "Como periodista tienes TODO el monitor: corresponsal, escáner de red y llamadas.",
-                    Tema.acento2(), 0);
+            cel.abrir(CelularVista.App.HABILIDAD);
             return;
         }
-        tab = Herramienta.values().length;
         if (caso == null || estado != Estado.ATENDIENDO) {
+            cel.abrir(CelularVista.App.HABILIDAD);
             return;
         }
         if (!j.puedeUsarHabilidad()) {
@@ -423,19 +692,21 @@ public class OficinaVista extends Lienzo {
             case CANDIDATO: mini = new MiniJuegos.Prensa(this); break;
             default: return;
         }
+        cel.cerrar();
         juego = Juego.MINIJUEGO;
         Sonido.tocar(Sonido.Tipo.TURNO);
     }
 
     private void cerrarMiniJuego() {
-        if (mini != null) {
-            mini.cerrar();
-        }
+        MiniJuego m = mini;
         mini = null;
         juego = Juego.NADA;
+        if (m != null) {
+            m.cerrar();
+        }
     }
 
-    private void llamar() {
+    void llamar() {
         if (caso == null || estado != Estado.ATENDIENDO) {
             return;
         }
@@ -446,6 +717,7 @@ public class OficinaVista extends Lienzo {
         }
         Sonido.tocar(Sonido.Tipo.TELEFONO);
         llamadaInst = j.llamar();
+        cel.abrir(CelularVista.App.TELEFONO);
         avisos.agregar("Llamada", llamadaInst, Tema.acento2(), 0);
     }
 
@@ -496,6 +768,14 @@ public class OficinaVista extends Lienzo {
             return;
         }
         int k = e.getKeyCode();
+        if (estado == Estado.NOTICIAS && panel == Panel.NADA) {
+            if (k == KeyEvent.VK_SPACE || k == KeyEvent.VK_ENTER || k == KeyEvent.VK_RIGHT) {
+                avanzarNoticia();
+            } else if (k == KeyEvent.VK_ESCAPE) {
+                terminarNoticias();
+            }
+            return;
+        }
         if (juego == Juego.MINIJUEGO && mini != null && panel == Panel.NADA) {
             mini.tecla(e);
             return;
@@ -505,6 +785,8 @@ public class OficinaVista extends Lienzo {
                 panel = Panel.NADA;
             } else if (juego == Juego.LUPA || juego == Juego.BILLETERA) {
                 juego = Juego.NADA;
+            } else if (cel.abierto() && estado != Estado.LLAMADA) {
+                cel.cerrar();
             } else {
                 panel = Panel.PAUSA;
             }
@@ -535,7 +817,7 @@ public class OficinaVista extends Lienzo {
         }
         if (panel == Panel.AYUDA) {
             if (k == KeyEvent.VK_DOWN || k == KeyEvent.VK_RIGHT) {
-                paginaAyuda = Math.min(paginaAyuda + 1, 8);
+                paginaAyuda = Math.min(paginaAyuda + 1, SECCIONES.length - 1);
             } else if (k == KeyEvent.VK_UP || k == KeyEvent.VK_LEFT) {
                 paginaAyuda = Math.max(0, paginaAyuda - 1);
             }
@@ -560,11 +842,17 @@ public class OficinaVista extends Lienzo {
             }
             return;
         }
+        if (k == KeyEvent.VK_P || k == KeyEvent.VK_TAB) {
+            if (estado != Estado.LLAMADA) {
+                cel.alternar();
+            }
+            return;
+        }
         if (k == KeyEvent.VK_SPACE || k == KeyEvent.VK_ENTER) {
             principal();
             return;
         }
-        if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_5) {
+        if (k >= KeyEvent.VK_1 && k <= KeyEvent.VK_6) {
             List<NodoDialogo> op = j.opciones();
             int i = k - KeyEvent.VK_1;
             if (caso != null && i < op.size()) {
@@ -594,13 +882,9 @@ public class OficinaVista extends Lienzo {
             juego = Juego.BILLETERA;
             return;
         }
-        String sel = "ZXCVB";
-        int si = sel.indexOf(Character.toUpperCase(e.getKeyChar()));
-        if (si >= 0) {
-            List<Veredicto> s = j.sellos();
-            if (si < s.size()) {
-                sellar(s.get(si));
-            }
+        // D o cualquiera de las teclas de la pista (Z X C V) abren la pista enseguida
+        if (k == KeyEvent.VK_D || PistaSellos.TECLAS.indexOf(Character.toUpperCase(e.getKeyChar())) >= 0) {
+            decidir();
         }
     }
 
@@ -608,7 +892,10 @@ public class OficinaVista extends Lienzo {
     private void principal() {
         switch (estado) {
             case TURNO:
-                empezarLlamada();
+                empezarNoticias();
+                break;
+            case NOTICIAS:
+                avanzarNoticia();
                 break;
             case LLAMADA:
                 avanzarLlamada();
@@ -634,43 +921,28 @@ public class OficinaVista extends Lienzo {
     }
 
     // ==================================================================
-    // Mouse: arrastrar sellos y preguntas
+    // Mouse: arrastrar preguntas; el celular usa zonas
     // ==================================================================
 
     private boolean escritorioLibre() {
-        return juego == Juego.NADA && (panel == Panel.NADA);
+        return juego == Juego.NADA && panel == Panel.NADA && estado != Estado.NOTICIAS;
     }
 
     @Override
     protected boolean presionar(int x, int y) {
-        if (j == null) {
-            return false;
-        }
-        if (y < BARRA) {
-            return false;               // la barra siempre responde con sus zonas
-        }
-        if (panel != Panel.NADA) {
+        if (j == null || y < BARRA || panel != Panel.NADA || estado == Estado.NOTICIAS) {
             return false;
         }
         if (juego == Juego.MINIJUEGO && mini != null) {
             return mini.presionar(x, y);
         }
-        if (!escritorioLibre()) {
+        if (!escritorioLibre() || cel.contiene(x, y)) {
             return false;
         }
         pressX = x;
         pressY = y;
         dragX = x;
         dragY = y;
-        if (estado == Estado.ATENDIENDO) {
-            for (Object[] z : zonasSellos) {
-                if (((Rectangle) z[0]).contains(x, y)) {
-                    arrastraSello = (Veredicto) z[1];
-                    Sonido.tocar(Sonido.Tipo.CLIC);
-                    return true;
-                }
-            }
-        }
         if (estado == Estado.ATENDIENDO || estado == Estado.ENTRANDO) {
             for (Object[] z : zonasPreguntas) {
                 if (((Rectangle) z[0]).contains(x, y)) {
@@ -698,21 +970,10 @@ public class OficinaVista extends Lienzo {
             return;
         }
         boolean clic = Math.abs(x - pressX) < 7 && Math.abs(y - pressY) < 7;
-        if (arrastraSello != null) {
-            Veredicto v = arrastraSello;
-            arrastraSello = null;
-            if (CEL.contains(x, y)) {
-                sellar(v);
-            } else if (clic) {
-                avisos.agregar("Arrastra el sello", "Toma el sello " + v.sello + " y suéltalo sobre la publicación del celular.",
-                        Tema.acento2(), 0);
-            }
-            return;
-        }
         if (arrastraPregunta != null) {
             NodoDialogo n = arrastraPregunta;
             arrastraPregunta = null;
-            if (clic || VENTANA.contains(x, y) || GLOBO.contains(x, y)) {
+            if (clic || ventanaR.contains(x, y)) {
                 preguntar(n);
             }
         }
@@ -720,20 +981,13 @@ public class OficinaVista extends Lienzo {
 
     @Override
     protected void rueda(int clics) {
-        if (LIBRETA.contains(mx, my)) {
-            libretaScroll = Math.max(0, libretaScroll + clics);
-        }
+        cel.rueda(clics);
     }
 
     @Override
     protected boolean cursorMano() {
         if (!escritorioLibre()) {
             return false;
-        }
-        for (Object[] z : zonasSellos) {
-            if (((Rectangle) z[0]).contains(mx, my)) {
-                return true;
-            }
         }
         for (Object[] z : zonasPreguntas) {
             if (((Rectangle) z[0]).contains(mx, my)) {
@@ -753,6 +1007,9 @@ public class OficinaVista extends Lienzo {
         if ((int) letras / 4 != (int) antes / 4 && letras < texto.length()) {
             Sonido.tocar(Sonido.Tipo.TECLEO);
         }
+        if (estado == Estado.NOTICIAS && segIdx < segmentos.size()) {
+            segLetras = Math.min(segmentos.get(segIdx).texto.length(), segLetras + dt * 42);
+        }
         parpadeoT -= dt;
         if (parpadeoT < -0.13) {
             parpadeoT = 2 + azar.nextDouble() * 3;
@@ -761,7 +1018,7 @@ public class OficinaVista extends Lienzo {
         if (caso != null && caso.visitante.impostor && estado == Estado.ATENDIENDO && azar.nextDouble() < dt * 0.12) {
             glitchT = 0.18;     // los impostores "fallan" de vez en cuando...
         }
-        tickerX -= dt * 70;
+        cel.actualizar(dt);
         if (j == null || !activo) {
             return;
         }
@@ -777,36 +1034,43 @@ public class OficinaVista extends Lienzo {
             for (Jornada.Evento ev : j.avanzar(dt)) {
                 avisos.agregar("Evento", ev.texto, ev == Jornada.Evento.PANICO ? Tema.mal() : Tema.acento2(), 0);
                 Sonido.tocar(Sonido.Tipo.ALERTA);
+                if (ev != Jornada.Evento.CAFE) {
+                    ultimaHora(Noticiero.ultimaHora(ev, j.jugador.ciudad));
+                    if (oyente != null) {
+                        oyente.alEvento(j, Noticiero.ultimaHora(ev, j.jugador.ciudad));
+                    }
+                }
                 if (ev == Jornada.Evento.VIRAL) {
                     viralEnEspera = j.tomarViral();
                 }
             }
             String rep = j.revisarCorresponsal();
             if (rep != null) {
-                avisos.agregar("Corresponsal", rep, Tema.acento2(), 0);
+                j.jugador.telefono.recibir(Telefono.CORRESPONSAL, rep, j.hora(), true);
+                cel.abrir(CelularVista.App.MAPA);
                 Sonido.tocar(Sonido.Tipo.TELEFONO);
+            }
+            for (Historia.MensajeProgramado m : j.tomarMensajes()) {
+                j.jugador.telefono.recibir(m.de, m.texto, j.hora(), m.de.equals(Telefono.JEFE));
             }
         }
         // la alerta viral aparece apenas el escritorio esta libre (decision con 10 segundos)
         if (viralEnEspera != null && juego == Juego.NADA && panel == Panel.NADA && estado != Estado.SELLANDO
-                && estado != Estado.FIN_DIA && estado != Estado.TURNO && estado != Estado.LLAMADA) {
+                && estado != Estado.FIN_DIA && estado != Estado.TURNO && estado != Estado.LLAMADA && estado != Estado.NOTICIAS) {
             mini = new MiniJuegos.Viral(this, viralEnEspera);
             viralEnEspera = null;
             juego = Juego.MINIJUEGO;
-            arrastraSello = null;
             arrastraPregunta = null;
+            cel.cerrar();
             Sonido.tocar(Sonido.Tipo.ALERTA);
         }
         if (j.isTerminada() && estado != Estado.FIN_DIA && estado != Estado.RESULTADO && estado != Estado.SELLANDO
-                && estado != Estado.TURNO && estado != Estado.LLAMADA) {
+                && estado != Estado.TURNO && estado != Estado.LLAMADA && estado != Estado.NOTICIAS
+                && !(juego == Juego.MINIJUEGO && mini instanceof JuegoSellos)) {
             if (caso != null && estado != Estado.SALIENDO) {
                 avisos.agregar("18:00", "¡Cerramos! Lo que quedó en la fila circula sin verificar.", Tema.mal(), 0);
             }
-            estado = Estado.FIN_DIA;
-            caso = null;
-            juego = Juego.NADA;
-            mini = null;
-            Sonido.tocar(Sonido.Tipo.ALERTA);
+            terminarDia();
         }
         switch (estado) {
             case ENTRANDO:
@@ -814,6 +1078,9 @@ public class OficinaVista extends Lienzo {
                 if (entradaT >= 1) {
                     entradaT = 1;
                     estado = Estado.ATENDIENDO;
+                    // situacion en la que se usa el celular: llego una publicacion para revisar
+                    j.jugador.telefono.notificar("Civitas", caso.visitante.nombre + " quiere publicar algo", caso.peticion, true);
+                    cel.abrir(CelularVista.App.CIVITAS);
                 }
                 break;
             case SALIENDO:
@@ -821,11 +1088,8 @@ public class OficinaVista extends Lienzo {
                 if (entradaT >= 1) {
                     caso = null;
                     texto = "";
-                    if (j.isTerminada()) {
-                        estado = Estado.FIN_DIA;
-                    } else if (j.enFila() == 0) {
-                        j.cerrar();
-                        estado = Estado.FIN_DIA;
+                    if (j.isTerminada() || j.enFila() == 0) {
+                        terminarDia();
                     } else {
                         estado = Estado.VACIO;
                         hacerPasar();
@@ -833,7 +1097,7 @@ public class OficinaVista extends Lienzo {
                 }
                 break;
             case SELLANDO:
-                selloT += dt * 2.2;
+                selloT += dt * 1.8;
                 if (selloT >= 1) {
                     terminarSello();
                 }
@@ -857,39 +1121,84 @@ public class OficinaVista extends Lienzo {
     // Dibujo
     // ==================================================================
 
+    /**
+     * Fondo vivo: la textura de la oficina, una luz que cambia con la hora,
+     * un haz de sol que barre despacio y motas de luz que suben. Todo en los
+     * colores de la paleta; con alto contraste queda negro y quieto.
+     */
     @Override
     protected void fondoVentana(Graphics2D g, int w, int h) {
         g.setColor(Tema.altoContraste ? Color.BLACK : Tema.ROSA);
         g.fillRect(0, 0, w, h);
-        if (!Tema.altoContraste) {
-            Recursos.cubrir(g, "fondo2.jpg", 0, 0, w, h);
+        if (Tema.altoContraste) {
+            return;
         }
+        Recursos.cubrir(g, "fondo2.jpg", 0, 0, w, h);
+        double dia = j == null ? 0.2 : Math.max(0, Math.min(1, j.avanceDia()));
+        // 1. luz de la hora: manana durazno, tarde cobre, noche ciruela
+        Color luz = dia < 0.5 ? Tema.mezclar(Tema.DORADO, Tema.COBRE, dia * 2)
+                : Tema.mezclar(Tema.COBRE, Tema.LILA, (dia - 0.5) * 2);
+        double ola = 0.5 + 0.5 * Math.sin(t * 0.15);
+        g.setPaint(new GradientPaint(0, 0, Tema.alfa(luz, (int) (70 + 30 * ola)), w, h,
+                Tema.alfa(Tema.CAOBA, (int) (40 + 40 * dia))));
+        g.fillRect(0, 0, w, h);
+        // 2. haz de sol diagonal que barre la pared
+        double bx = (t * 22) % (w + 900) - 450;
+        Path2D haz = new Path2D.Double();
+        haz.moveTo(bx, 0);
+        haz.lineTo(bx + 260, 0);
+        haz.lineTo(bx + 560, h);
+        haz.lineTo(bx + 300, h);
+        haz.closePath();
+        g.setPaint(new GradientPaint((float) bx, 0, Tema.alfa(Tema.CREMA, 34), (float) (bx + 400), h, Tema.alfa(Tema.CREMA, 0)));
+        g.fill(haz);
+        // 3. motas de luz que suben despacio (siempre las mismas: semilla fija)
+        Color[] cs = {Tema.DORADO, Tema.ROSA_CLARO, Tema.LILA_CLARO, Tema.COBRE};
+        Random rr = new Random(12);
+        for (int i = 0; i < 16; i++) {
+            double r = 30 + rr.nextInt(90);
+            double x = rr.nextDouble() * w + Math.sin(t * 0.3 + i) * 30;
+            double y = h + r - ((t * (8 + rr.nextInt(14)) + rr.nextDouble() * (h + 2 * r)) % (h + 2 * r));
+            int a = 30 + rr.nextInt(40);
+            g.setPaint(new RadialGradientPaint(new Point2D.Double(x, y), (float) r, new float[]{0f, 1f},
+                    new Color[]{Tema.alfa(cs[i % cs.length], a), Tema.alfa(cs[i % cs.length], 0)}));
+            g.fill(new Ellipse2D.Double(x - r, y - r, 2 * r, 2 * r));
+        }
+        // 4. vineta suave en los bordes
+        g.setPaint(new RadialGradientPaint(new Point2D.Double(w / 2.0, h / 2.0), (float) (Math.max(w, h) * 0.75),
+                new float[]{0.55f, 1f}, new Color[]{new Color(42, 23, 18, 0), new Color(42, 23, 18, 120)}));
+        g.fillRect(0, 0, w, h);
+    }
+
+    /** La escena se corre a la izquierda mientras el celular esta arriba. */
+    private void calcularEscena() {
+        double k = cel.visible();
+        int x = (int) Math.round(X_CENTRADA + (X_CORRIDA - X_CENTRADA) * k);
+        ventanaR = new Rectangle(x, 78, ESCENA_W, 466);
+        dialogoR = new Rectangle(x, 556, ESCENA_W, 288);
     }
 
     @Override
     protected void pintar(Graphics2D g, double dt) {
         actualizar(dt);
-        zonasSellos.clear();
         zonasPreguntas.clear();
         if (j == null) {
             return;
         }
+        calcularEscena();
         ventana(g);
-        globo(g);
-        preguntas(g);
-        celular(g);
-        sellos(g);
-        monitor(g);
-        libreta(g);
-        tv(g);
+        dialogo(g);
+        if (estado != Estado.NOTICIAS) {
+            cel.dibujar(g);
+        }
         if (estado == Estado.SELLANDO) {
             animacionSello(g);
         }
-        if (estado == Estado.RESULTADO && ultimo != null) {
-            tarjetaResultado(g);
-        }
         if (estado == Estado.TURNO) {
             tarjetaTurno(g);
+        }
+        if (estado == Estado.ESPERA) {
+            tarjetaEspera(g);
         }
         if (estado == Estado.FIN_DIA) {
             finDia(g);
@@ -908,6 +1217,10 @@ public class OficinaVista extends Lienzo {
                 break;
             default:
                 break;
+        }
+        avisos.subtituloY = 67;
+        if (estado == Estado.NOTICIAS) {
+            noticiero(g);
         }
         switch (panel) {
             case AYUDA:
@@ -930,8 +1243,11 @@ public class OficinaVista extends Lienzo {
         }
         barra(g);
         alertaFlotante(g);
-        if (juego == Juego.NADA && panel == Panel.NADA && estado != Estado.FIN_DIA && estado != Estado.TURNO) {
-            avisos.dibujar(g, VENTANA.x + 12, VENTANA.y + VENTANA.height - 46, 430, H, W);
+        boolean conPista = juego == Juego.MINIJUEGO && mini instanceof JuegoSellos;
+        if ((juego == Juego.NADA || conPista) && panel == Panel.NADA && estado != Estado.FIN_DIA && estado != Estado.TURNO
+                && estado != Estado.NOTICIAS) {
+            int ay = ventanaR.y + (t - ultimaHoraT < 7 ? 58 : 16);
+            avisos.dibujar(g, ventanaR.x + 16, ay, 380, H, W);
         } else {
             avisos.dibujar(g, -2000, 88, 10, H, W);   // solo los subtitulos
         }
@@ -940,28 +1256,22 @@ public class OficinaVista extends Lienzo {
         }
     }
 
-    /** Lo que se esta arrastrando (sello o pregunta) va encima de todo. */
+    /** La pregunta que se esta arrastrando va encima de todo. */
     private void arrastrados(Graphics2D g) {
-        if (arrastraSello != null) {
-            boolean sobre = CEL.contains(dragX, dragY);
-            if (!Recursos.contener(g, arrastraSello.imagen(), dragX - 50, dragY - 58, 100, 100)) {
-                Dibujo.selloRespaldo(g, dragX, dragY - 8, 46, colorSello(arrastraSello), arrastraSello.sello);
-            }
-            if (sobre) {
-                g.setFont(Tema.fuente(Font.BOLD, 13));
-                int tw = g.getFontMetrics().stringWidth("¡Suelta para sellar!") + 24;
-                g.setColor(Tema.altoContraste ? Color.BLACK : Tema.TINTA);
-                g.fillRoundRect(dragX - tw / 2, dragY + 44, tw, 26, 13, 13);
-                g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.CREMA);
-                Dibujo.centrado(g, "¡Suelta para sellar!", dragX, dragY + 62);
-            }
-        }
         if (arrastraPregunta != null && (Math.abs(dragX - pressX) > 6 || Math.abs(dragY - pressY) > 6)) {
-            Rectangle r = new Rectangle(dragX - 200, dragY - 22, 400, 44);
+            Rectangle r = new Rectangle(dragX - 180, dragY - 21, 360, 42);
             Graphics2D s = (Graphics2D) g.create();
             s.rotate(Math.toRadians(-2), dragX, dragY);
             tarjetaPregunta(s, r, 0, arrastraPregunta, true, true);
             s.dispose();
+            if (ventanaR.contains(dragX, dragY)) {
+                g.setFont(Tema.fuente(Font.BOLD, 13));
+                int tw = g.getFontMetrics().stringWidth("¡Suelta para preguntar!") + 24;
+                g.setColor(Tema.altoContraste ? Color.BLACK : Tema.TINTA);
+                g.fillRoundRect(dragX - tw / 2, dragY + 30, tw, 26, 13, 13);
+                g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.CREMA);
+                Dibujo.centrado(g, "¡Suelta para preguntar!", dragX, dragY + 48);
+            }
         }
     }
 
@@ -1010,7 +1320,7 @@ public class OficinaVista extends Lienzo {
         g.setFont(Tema.fuente(Font.BOLD, 18));
         g.setColor(Tema.acento2());
         g.drawString(String.valueOf(j.enFila()), 562, 48);
-        // advertencias
+        // advertencias (las "vidas" del verificador)
         g.setFont(Tema.fuente(Font.BOLD, 13));
         g.setColor(Tema.texto());
         g.drawString("Advertencias", 630, 26);
@@ -1027,7 +1337,7 @@ public class OficinaVista extends Lienzo {
                 g.drawRoundRect(x, 33, 18, 20, 6, 6);
             }
         }
-        // puntos
+        // puntos y dinero
         g.setFont(Tema.fuente(Font.BOLD, 13));
         g.setColor(Tema.texto());
         g.drawString("Puntos", 760, 26);
@@ -1043,12 +1353,9 @@ public class OficinaVista extends Lienzo {
         if (!marcadorRed.isEmpty()) {
             g.setFont(Tema.fuente(Font.PLAIN, 11));
             g.setColor(Tema.textoSuave());
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), "Red: " + String.join("  ·  ", marcadorRed), 175), 950, 38);
+            g.drawString(Dibujo.recortar(g.getFontMetrics(), "Red: " + String.join("  ·  ", marcadorRed), 230), 950, 38);
         }
         // los 4 botones con imagen: siempre visibles, en cualquier rol y pantalla
-        // TIENDA: boton redondo dibujado con el mismo estilo de los botones con imagen
-        Rectangle rt = new Rectangle(W - 5 * 58 - 6, 7, 50, 50);
-        botonTienda(g, rt);
         String[][] b = {{"ayuda.png", "Ayuda (M)"}, {"estructura.png", "Estructuras (F2)"}, {"mapa.png", "Mapa y ciudad (F3)"},
             {"pausa.png", "Pausa (Esc)"}};
         Panel[] p = {Panel.AYUDA, Panel.ESTRUCTURAS, Panel.MAPA, Panel.PAUSA};
@@ -1068,7 +1375,6 @@ public class OficinaVista extends Lienzo {
             final Panel pp = p[i];
             botonImagen(g, b[i][0], r, b[i][1], () -> {
                 panel = panel == pp ? Panel.NADA : pp;
-                arrastraSello = null;
                 arrastraPregunta = null;
             });
             // el mapa lleva la salud de la ciudad en una insignia
@@ -1085,7 +1391,7 @@ public class OficinaVista extends Lienzo {
         }
     }
 
-    // ------------------------------------------------------------ ventana de interrogatorio
+    // ------------------------------------------------------------ la ventanilla
     /** Cielo segun la hora: manana (durazno), tarde (dorado), atardecer (malva), noche (ciruela). */
     private Color[] cielo(double dia) {
         double[] k = {0, 0.4, 0.72, 1};
@@ -1103,13 +1409,38 @@ public class OficinaVista extends Lienzo {
         return new Color[]{Tema.mezclar(c[i][0], c[i + 1][0], f), Tema.mezclar(c[i][1], c[i + 1][1], f)};
     }
 
-    private String momento(double dia) {
-        return dia < 0.33 ? "Mañana" : dia < 0.72 ? "Tarde" : "Noche";
+    private static double suave(double x) {
+        return x * x * (3 - 2 * x);
+    }
+
+    /** Edificios de una capa del horizonte (siempre los mismos: semilla fija). */
+    private void horizonte(Graphics2D b, int w, int suelo, int semilla, Color color, double ventanas, int alturaMax, double dia) {
+        Random rr = new Random(semilla);
+        int x = -30;
+        while (x < w + 30) {
+            int bw = 46 + rr.nextInt(64), bh = 60 + rr.nextInt(alturaMax);
+            b.setColor(color);
+            b.fillRect(x, suelo - bh, bw, bh);
+            if (rr.nextInt(3) == 0) {          // remate en el techo
+                b.fillRect(x + bw / 3, suelo - bh - 10, bw / 3, 10);
+            }
+            if (ventanas > 0) {
+                for (int wy = suelo - bh + 12; wy < suelo - 16; wy += 19) {
+                    for (int wx = x + 8; wx < x + bw - 10; wx += 15) {
+                        if (rr.nextInt(4) == 0) {
+                            b.setColor(new Color(255, 214, 150, (int) (ventanas * (dia > 0.6 ? 210 : 70))));
+                            b.fillRect(wx, wy, 6, 8);
+                        }
+                    }
+                }
+            }
+            x += bw + 4 + rr.nextInt(10);
+        }
     }
 
     private void ventana(Graphics2D g) {
-        Rectangle r = VENTANA;
-        if (bufVentana == null) {
+        Rectangle r = ventanaR;
+        if (bufVentana == null || bufVentana.getWidth() != r.width || bufVentana.getHeight() != r.height) {
             bufVentana = new BufferedImage(r.width, r.height, BufferedImage.TYPE_INT_ARGB);
         }
         Graphics2D b = bufVentana.createGraphics();
@@ -1120,55 +1451,55 @@ public class OficinaVista extends Lienzo {
         if (Tema.altoContraste) {
             cs = new Color[]{Color.BLACK, new Color(30, 30, 30)};
         }
-        b.setPaint(new GradientPaint(0, 0, cs[0], 0, r.height, cs[1]));
+        int suelo = r.height - 112;
+        b.setPaint(new GradientPaint(0, 0, cs[0], 0, suelo, cs[1]));
         b.fillRect(0, 0, r.width, r.height);
         // sol que cruza el cielo; de noche, luna y estrellas
         if (!Tema.altoContraste) {
-            double sx = r.width * (0.1 + 0.8 * dia), sy = 150 - Math.sin(Math.PI * dia) * 120;
+            double sx = r.width * (0.12 + 0.76 * dia), sy = 170 - Math.sin(Math.PI * dia) * 130;
             if (dia < 0.8) {
-                b.setPaint(new RadialGradientPaint(new Point2D.Double(sx, sy), 70f, new float[]{0f, 1f},
-                        new Color[]{new Color(255, 230, 170, 160), new Color(255, 230, 170, 0)}));
-                b.fill(new Ellipse2D.Double(sx - 70, sy - 70, 140, 140));
-                b.setColor(new Color(255, 226, 160));
-                b.fill(new Ellipse2D.Double(sx - 22, sy - 22, 44, 44));
+                b.setPaint(new RadialGradientPaint(new Point2D.Double(sx, sy), 90f, new float[]{0f, 1f},
+                        new Color[]{new Color(255, 230, 170, 150), new Color(255, 230, 170, 0)}));
+                b.fill(new Ellipse2D.Double(sx - 90, sy - 90, 180, 180));
+                b.setColor(new Color(255, 228, 168));
+                b.fill(new Ellipse2D.Double(sx - 24, sy - 24, 48, 48));
             }
             double noche = Math.max(0, (dia - 0.7) / 0.3);
             if (noche > 0) {
                 Random st = new Random(5);
-                for (int i = 0; i < 40; i++) {
+                for (int i = 0; i < 60; i++) {
                     int a = (int) (noche * (120 + 100 * Math.sin(t * 2 + i)));
                     b.setColor(new Color(255, 245, 230, Math.max(0, Math.min(255, a))));
-                    b.fillRect(st.nextInt(r.width), st.nextInt(160), 2, 2);
+                    b.fillRect(st.nextInt(r.width), st.nextInt(200), 2, 2);
                 }
                 b.setColor(new Color(252, 240, 220, (int) (230 * noche)));
-                b.fill(new Ellipse2D.Double(r.width - 110, 30, 38, 38));
+                b.fill(new Ellipse2D.Double(r.width - 150, 40, 40, 40));
                 b.setColor(Tema.mezclar(cs[0], cs[1], 0.1));
-                b.fill(new Ellipse2D.Double(r.width - 100, 24, 38, 38));
+                b.fill(new Ellipse2D.Double(r.width - 140, 33, 40, 40));
+            }
+            // nubes suaves
+            for (int i = 0; i < 4; i++) {
+                double nx = (i * 290 + t * 6) % (r.width + 240) - 120, ny = 50 + (i % 2) * 46;
+                b.setColor(new Color(255, 250, 244, (int) (70 * (1 - dia * 0.7))));
+                b.fill(new Ellipse2D.Double(nx, ny, 120, 28));
+                b.fill(new Ellipse2D.Double(nx + 30, ny - 14, 70, 34));
             }
         }
-        // edificios de Ciudad Nova (en tonos de la paleta)
-        Random rr = new Random(77);
-        for (int i = 0; i < 12; i++) {
-            int bw = 40 + rr.nextInt(50), bh = 70 + rr.nextInt(150), bx = i * 50 - 20;
-            Color ed = Tema.altoContraste ? new Color(60, 60, 60)
-                    : Tema.mezclar(new Color(120 + rr.nextInt(30), 70 + rr.nextInt(20), 56), new Color(56, 32, 40), dia * 0.8);
-            b.setColor(ed);
-            b.fillRect(bx, r.height - 96 - bh, bw, bh);
-            b.setColor(new Color(255, 214, 140, dia > 0.6 ? 200 : 70));
-            for (int wy = r.height - 86 - bh; wy < r.height - 106; wy += 18) {
-                for (int wx = bx + 6; wx < bx + bw - 8; wx += 14) {
-                    if (rr.nextInt(3) > 0) {
-                        b.fillRect(wx, wy, 6, 8);
-                    }
-                }
-            }
-        }
-        b.setColor(Tema.altoContraste ? new Color(40, 40, 40) : new Color(90, 58, 48));
-        b.fillRect(0, r.height - 96, r.width, 96);
+        // Ciudad Nova: dos capas de edificios (la de atras se pierde en el cielo)
+        Color lejos = Tema.altoContraste ? new Color(50, 50, 50) : Tema.mezclar(new Color(170, 112, 104), cs[1], 0.45);
+        Color cerca = Tema.altoContraste ? new Color(70, 70, 70)
+                : Tema.mezclar(new Color(126, 74, 60), new Color(54, 32, 44), dia * 0.85);
+        horizonte(b, r.width, suelo, 41, lejos, 0, 200, dia);
+        horizonte(b, r.width, suelo, 77, cerca, 1, 150, dia);
+        // andén y calle
+        b.setColor(Tema.altoContraste ? new Color(40, 40, 40) : Tema.mezclar(new Color(108, 70, 58), new Color(50, 32, 36), dia * 0.7));
+        b.fillRect(0, suelo, r.width, r.height - suelo);
+        b.setColor(new Color(255, 255, 255, 26));
+        b.fillRect(0, suelo, r.width, 3);
         // lluvia el dia 3
         if (j.dia == 3) {
-            b.setColor(new Color(240, 220, 230, 120));
-            for (int i = 0; i < 70; i++) {
+            b.setColor(new Color(240, 220, 230, 110));
+            for (int i = 0; i < 110; i++) {
                 double x = (i * 37 + t * 220) % r.width, y = (i * 53 + t * 520) % r.height;
                 b.drawLine((int) x, (int) y, (int) x - 4, (int) y + 12);
             }
@@ -1176,64 +1507,81 @@ public class OficinaVista extends Lienzo {
         // la fila de gente esperando (siluetas)
         int n = Math.min(6, j.enFila());
         for (int i = 0; i < n; i++) {
-            int x = r.width - 60 - i * 34, y = r.height - 160;
-            b.setColor(new Color(42, 23, 18, 170));
-            b.fill(new Ellipse2D.Double(x, y + Math.sin(t * 2 + i) * 2, 26, 30));
-            b.fillRoundRect(x - 6, y + 28, 38, 80, 18, 18);
+            int x = r.width - 90 - i * 40, y = suelo - 108;
+            b.setColor(new Color(42, 23, 18, 120));
+            b.fill(new Ellipse2D.Double(x, y + Math.sin(t * 2 + i) * 2, 28, 32));
+            b.fillRoundRect(x - 7, y + 30, 42, 90, 20, 20);
         }
         // el visitante
         if (caso != null && estado != Estado.VACIO) {
             double desliz = 0;
             if (estado == Estado.ENTRANDO) {
-                desliz = (1 - suave(entradaT)) * (r.width / 2.0 + 120);
+                desliz = (1 - suave(entradaT)) * (r.width / 2.0 + 160);
             } else if (estado == Estado.SALIENDO) {
-                desliz = -suave(entradaT) * (r.width / 2.0 + 160);
+                desliz = -suave(entradaT) * (r.width / 2.0 + 200);
             }
-            double habla = letras < texto.length() ? Math.abs(Math.sin(t * 14)) : 0;
+            double habla = letras < texto.length() && estado != Estado.LLAMADA ? Math.abs(Math.sin(t * 14)) : 0;
             double bob = Math.sin(t * 1.7) * 3;
-            Caras.dibujar(b, caso.visitante.cara, r.width / 2.0 + desliz, 150 + bob, 1.35, expr, parpadeoT < 0, habla);
+            b.setPaint(new RadialGradientPaint(new Point2D.Double(r.width / 2.0 + desliz, 230), 260f, new float[]{0f, 1f},
+                    new Color[]{new Color(255, 240, 220, 60), new Color(255, 240, 220, 0)}));
+            b.fill(new Ellipse2D.Double(r.width / 2.0 + desliz - 260, -30, 520, 520));
+            Caras.dibujar(b, caso.visitante.cara, r.width / 2.0 + desliz, 196 + bob, 1.72, expr, parpadeoT < 0, habla);
         }
-        // reflejo del vidrio y mostrador de madera
-        b.setPaint(new GradientPaint(0, 0, new Color(255, 255, 255, 46), r.width, r.height, new Color(255, 255, 255, 0)));
+        // vidrio: reflejo, rejilla para hablar y vinilo de la agencia
+        b.setPaint(new GradientPaint(0, 0, new Color(255, 255, 255, 40), r.width, r.height, new Color(255, 255, 255, 0)));
         b.fillRect(0, 0, r.width, r.height);
-        b.setColor(new Color(255, 255, 255, 40));
-        b.setStroke(new BasicStroke(10));
-        b.drawLine(60, 30, 140, -10);
-        b.drawLine(90, 60, 200, -10);
+        b.setColor(new Color(255, 255, 255, 34));
+        b.setStroke(new BasicStroke(14));
+        b.drawLine(60, 60, 170, -20);
+        b.setStroke(new BasicStroke(6));
+        b.drawLine(110, 70, 220, -10);
+        b.drawLine(r.width - 140, r.height - 120, r.width - 40, r.height - 220);
         b.setStroke(new BasicStroke(1));
+        double gx = r.width / 2.0, gy = r.height - 104;
+        b.setColor(new Color(255, 255, 255, 50));
+        b.draw(new Ellipse2D.Double(gx - 28, gy - 14, 56, 28));
+        for (int i = -2; i <= 2; i++) {
+            for (int k = -1; k <= 1; k++) {
+                if (Math.abs(i) == 2 && k != 0) {
+                    continue;
+                }
+                b.fill(new Ellipse2D.Double(gx + i * 9 - 2, gy + k * 7 - 2, 4, 4));
+            }
+        }
+        b.setFont(Tema.fuente(Font.BOLD, 13));
+        b.setColor(new Color(255, 255, 255, 70));
+        b.drawString("INFLUENCE, INC.  ·  MESA DE VERIFICACIÓN", 30, 36);
+        // mostrador de madera
+        int my0 = r.height - 74;
         if (Tema.altoContraste) {
             b.setColor(Color.WHITE);
+            b.fillRect(0, my0, r.width, 74);
         } else {
-            b.setPaint(new GradientPaint(0, r.height - 40, new Color(150, 84, 52), 0, r.height, new Color(96, 52, 32)));
+            b.setPaint(new GradientPaint(0, my0, new Color(164, 96, 60), 0, r.height, new Color(96, 52, 32)));
+            b.fillRect(0, my0, r.width, 74);
+            b.setColor(new Color(255, 220, 180, 70));
+            b.fillRect(0, my0, r.width, 4);
+            b.setColor(new Color(70, 36, 22, 60));
+            Random vet = new Random(3);
+            for (int i = 0; i < 14; i++) {
+                int y = my0 + 12 + vet.nextInt(56);
+                b.drawLine(vet.nextInt(r.width / 2), y, r.width / 2 + vet.nextInt(r.width / 2), y + vet.nextInt(3) - 1);
+            }
+            // ranura para pasar papeles
+            b.setColor(new Color(40, 20, 14, 160));
+            b.fillRoundRect(r.width / 2 - 110, my0 - 6, 220, 12, 6, 6);
         }
-        b.fillRect(0, r.height - 40, r.width, 40);
         b.setColor(new Color(42, 23, 18));
-        b.fillRoundRect(r.width / 2 - 62, r.height - 33, 124, 24, 12, 12);
-        b.setFont(Tema.fuente(Font.BOLD, 11.5f));
+        b.fillRoundRect(r.width / 2 - 70, r.height - 44, 140, 28, 14, 14);
+        b.setFont(Tema.fuente(Font.BOLD, 12));
         b.setColor(Tema.DORADO);
-        Dibujo.centrado(b, "VENTANILLA 3", r.width / 2.0, r.height - 16);
-        // chip de la hora del dia
-        String mo = momento(dia);
-        b.setFont(Tema.fuente(Font.BOLD, 11.5f));
-        int cw = b.getFontMetrics().stringWidth("Interrogatorio · " + mo) + 24;
-        b.setColor(new Color(42, 23, 18, 170));
-        b.fillRoundRect(12, 12, cw, 24, 12, 12);
-        b.setColor(Tema.CREMA);
-        b.drawString("Interrogatorio · " + mo, 24, 29);
-        if (estado == Estado.VACIO || estado == Estado.TURNO) {
-            boolean sig = estado == Estado.VACIO;
-            b.setColor(sig ? Tema.SALVIA : Tema.LADRILLO);
-            b.fillRoundRect(r.width / 2 - 90, 110, 180, 54, 16, 16);
-            b.setColor(Tema.CREMA);
-            b.setFont(Tema.fuente(Font.BOLD, 22));
-            Dibujo.centrado(b, sig ? "SIGUIENTE" : "CERRADO", r.width / 2.0, 146);
-        }
+        Dibujo.centrado(b, "VENTANILLA 3", r.width / 2.0, r.height - 25);
         b.dispose();
 
         // marco de madera con sombra
-        Dibujo.sombra(g, new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 18, 18), 6, 4);
+        Dibujo.sombra(g, new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 22, 22), 6, 4);
         Graphics2D v = (Graphics2D) g.create();
-        v.clip(new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 18, 18));
+        v.clip(new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 22, 22));
         if (glitchT > 0) {
             for (int y = 0; y < r.height; y += 12) {
                 int dx = azar.nextInt(5) == 0 ? azar.nextInt(30) - 15 : 0;
@@ -1244,156 +1592,293 @@ public class OficinaVista extends Lienzo {
         } else {
             v.drawImage(bufVentana, r.x, r.y, null);
         }
-        v.dispose();
-        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(110, 54, 33));
-        g.setStroke(new BasicStroke(8));
-        g.drawRoundRect(r.x, r.y, r.width, r.height, 18, 18);
-        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(200, 130, 90, 150));
-        g.setStroke(new BasicStroke(1.5f));
-        g.drawRoundRect(r.x + 4, r.y + 4, r.width - 8, r.height - 8, 14, 14);
-        g.setStroke(new BasicStroke(1));
-        // llamada del jefe: el telefono timbra dentro de la ventana
-        if (estado == Estado.LLAMADA) {
-            double sh = Math.sin(t * 30) * (((int) (t * 1.5)) % 2 == 0 ? 3 : 0);
-            Rectangle tr = new Rectangle((int) (r.getCenterX() - 46 + sh), r.y + 92, 92, 92);
-            g.setColor(Tema.alfa(Tema.DORADO, (int) (70 + 60 * Math.sin(t * 6))));
-            g.fill(new Ellipse2D.Double(tr.x - 14, tr.y - 14, tr.width + 28, tr.height + 28));
-            if (!Recursos.contener(g, "celular2.png", tr.x, tr.y, tr.width, tr.height)) {
-                Dibujo.selloRespaldo(g, tr.getCenterX(), tr.getCenterY(), 44, Tema.COBRE, "TEL");
-            }
-            g.setFont(Tema.fuente(Font.BOLD, 15));
-            int tw = g.getFontMetrics().stringWidth("Don Ramiro está llamando...") + 32;
-            g.setColor(new Color(42, 23, 18, 200));
-            g.fillRoundRect((int) r.getCenterX() - tw / 2, tr.y + tr.height + 14, tw, 30, 15, 15);
-            g.setColor(Tema.CREMA);
-            Dibujo.centrado(g, "Don Ramiro está llamando...", r.getCenterX(), tr.y + tr.height + 34);
+        // letrero colgante: SIGUIENTE / CERRADO
+        if (estado == Estado.VACIO || estado == Estado.TURNO || estado == Estado.NOTICIAS || estado == Estado.LLAMADA) {
+            boolean sig = estado == Estado.VACIO && !j.isTerminada();
+            double balanceo = Math.sin(t * 1.4) * 0.03;
+            Graphics2D s = (Graphics2D) v.create();
+            s.rotate(balanceo, r.getCenterX(), r.y);
+            s.setColor(new Color(60, 34, 24));
+            s.setStroke(new BasicStroke(2));
+            s.drawLine((int) r.getCenterX() - 60, r.y, (int) r.getCenterX() - 70, r.y + 120);
+            s.drawLine((int) r.getCenterX() + 60, r.y, (int) r.getCenterX() + 70, r.y + 120);
+            s.setStroke(new BasicStroke(1));
+            Rectangle cart = new Rectangle((int) r.getCenterX() - 110, r.y + 112, 220, 70);
+            s.setPaint(new GradientPaint(cart.x, cart.y, sig ? new Color(132, 176, 104) : new Color(206, 92, 76), cart.x,
+                    cart.y + cart.height, sig ? new Color(90, 130, 70) : new Color(160, 56, 44)));
+            s.fillRoundRect(cart.x, cart.y, cart.width, cart.height, 18, 18);
+            s.setColor(new Color(255, 255, 255, 90));
+            s.drawRoundRect(cart.x + 5, cart.y + 5, cart.width - 10, cart.height - 10, 14, 14);
+            s.setFont(Tema.fuente(Font.BOLD, 26));
+            s.setColor(Tema.CREMA);
+            Dibujo.centrado(s, sig ? "SIGUIENTE" : "CERRADO", cart.getCenterX(), cart.y + 45);
+            s.dispose();
         }
-        // BILLETERA: solo si el visitante trae credencial
+        v.dispose();
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(96, 50, 30));
+        g.setStroke(new BasicStroke(10));
+        g.drawRoundRect(r.x, r.y, r.width, r.height, 22, 22);
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(214, 150, 104, 140));
+        g.setStroke(new BasicStroke(1.5f));
+        g.drawRoundRect(r.x + 5, r.y + 5, r.width - 10, r.height - 10, 18, 18);
+        g.setStroke(new BasicStroke(1));
+        // ULTIMA HORA: franja sobre el vidrio
+        if (ultimaHoraTxt != null && t - ultimaHoraT < 7 && estado != Estado.NOTICIAS) {
+            double edad = t - ultimaHoraT;
+            double a = Math.min(1, edad / 0.3) * Math.min(1, (7 - edad) / 0.5);
+            Rectangle f = new Rectangle(r.x + 14, r.y + 14, r.width - 28, 34);
+            Composite antes = g.getComposite();
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) Math.max(0, a)));
+            g.setColor(new Color(24, 16, 18, 230));
+            g.fillRoundRect(f.x, f.y, f.width, f.height, 10, 10);
+            g.setColor(new Color(192, 52, 44));
+            g.fillRoundRect(f.x, f.y, 132, f.height, 10, 10);
+            g.setFont(Tema.fuente(Font.BOLD, 13));
+            g.setColor(Color.WHITE);
+            g.drawString("ÚLTIMA HORA", f.x + 14, f.y + 22);
+            Graphics2D c = (Graphics2D) g.create();
+            c.clipRect(f.x + 140, f.y, f.width - 150, f.height);
+            c.setFont(Tema.fuente(Font.PLAIN, 13.5f));
+            int tw = c.getFontMetrics().stringWidth(ultimaHoraTxt);
+            double x = tw > f.width - 160 ? f.x + 146 - Math.max(0, (edad - 1.2) * 60) % (tw + 80) : f.x + 146;
+            c.setColor(Tema.CREMA);
+            c.drawString(ultimaHoraTxt, (float) x, f.y + 22);
+            c.dispose();
+            g.setComposite(antes);
+        }
+        // BILLETERA sobre el mostrador: solo si el visitante trae credencial
         if (caso != null && caso.visitante.credencial != null
                 && (estado == Estado.ATENDIENDO || estado == Estado.ENTRANDO || estado == Estado.RESULTADO)) {
-            Rectangle br = new Rectangle(r.x + r.width - 84, r.y + r.height - 116, 66, 66);
-            br.y += (int) (Math.sin(t * 2.4) * 3);
+            Rectangle br = new Rectangle(r.x + r.width - 120, r.y + r.height - 118, 74, 74);
+            br.y += (int) (Math.sin(t * 2.4) * 2);
             boolean hv = encima(br) && escritorioLibre();
             if (!Tema.altoContraste) {
-                g.setColor(new Color(42, 23, 18, 120));
-                g.fill(new Ellipse2D.Double(br.x - 6, br.y - 6, br.width + 12, br.height + 12));
+                g.setColor(new Color(42, 23, 18, 110));
+                g.fill(new Ellipse2D.Double(br.x - 6, br.y - 4, br.width + 12, br.height + 12));
             }
             Dibujo.botonImagen(g, "billetera.png", br, null, hv, t);
-            g.setFont(Tema.fuente(Font.BOLD, 11));
+            g.setFont(Tema.fuente(Font.BOLD, 11.5f));
             g.setColor(Tema.CREMA);
-            Dibujo.centrado(g, "Credencial (I)", br.getCenterX(), br.y + br.height + 16);
+            Dibujo.centrado(g, "Credencial (I)", br.getCenterX(), br.y + br.height + 15);
             if (escritorioLibre()) {
                 zona(br, () -> juego = Juego.BILLETERA);
             }
         }
     }
 
-    private static double suave(double x) {
-        return x * x * (3 - 2 * x);
-    }
-
-    // ------------------------------------------------------------ globo de dialogo
-    private void globo(Graphics2D g) {
-        Rectangle r = GLOBO;
-        RoundRectangle2D s = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 22, 22);
-        Dibujo.sombra(g, s, 4, 3);
+    // ------------------------------------------------------------ cuadro de dialogo
+    private void dialogo(Graphics2D g) {
+        Rectangle r = dialogoR;
+        RoundRectangle2D s = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 24, 24);
+        Dibujo.sombra(g, s, 5, 4);
         g.setColor(Tema.altoContraste ? Color.BLACK : Tema.PAPEL);
         g.fill(s);
-        Path2D cola = new Path2D.Double();
-        cola.moveTo(r.x + 80, r.y + 1);
-        cola.lineTo(r.x + 96, r.y - 12);
-        cola.lineTo(r.x + 112, r.y + 1);
-        g.fill(cola);
-        boolean destino = arrastraPregunta != null && (GLOBO.contains(dragX, dragY) || VENTANA.contains(dragX, dragY));
-        g.setColor(destino ? Tema.acento2() : Tema.altoContraste ? Color.WHITE : new Color(200, 160, 140));
+        boolean destino = arrastraPregunta != null && ventanaR.contains(dragX, dragY);
+        g.setColor(destino ? Tema.acento2() : Tema.altoContraste ? Color.WHITE : new Color(214, 178, 158));
         g.setStroke(new BasicStroke(destino ? 3 : 1.4f));
         g.draw(s);
         g.setStroke(new BasicStroke(1));
-        if (texto.isEmpty()) {
-            g.setFont(Tema.fuente(Font.ITALIC, 14));
-            g.setColor(Tema.tintaSuave());
-            g.drawString(estado == Estado.VACIO ? "La ventanilla está libre. Haz pasar al siguiente." : "...", r.x + 18, r.y + 52);
+        int textoW = 716;
+        Rectangle acc = new Rectangle(r.x + r.width - 222, r.y + 22, 200, r.height - 44);
+        if (estado == Estado.TURNO || estado == Estado.NOTICIAS || estado == Estado.FIN_DIA) {
             return;
+        }
+        if (estado == Estado.RESULTADO && ultimo != null) {
+            resultado(g, new Rectangle(r.x + 26, r.y + 22, textoW, r.height - 40));
+            separadorAcciones(g, r, acc);
+            boton(g, new Rectangle(acc.x, acc.y + acc.height - 56, acc.width, 56), "Despedir  (Espacio)",
+                    Dibujo.Estilo.PRINCIPAL, this::despedirVisitante);
+            return;
+        }
+        // quien habla
+        String nombre;
+        if (estado == Estado.VACIO) {
+            nombre = "Ventanilla 3";
+        } else if (estado == Estado.LLAMADA || caso == null) {
+            nombre = quienHabla;
+        } else {
+            nombre = quienHabla + "  ·  " + caso.visitante.rol.etiqueta;
         }
         g.setFont(Tema.fuente(Font.BOLD, 13));
+        int nw = g.getFontMetrics().stringWidth(nombre) + 30;
         g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.COBRE);
-        g.drawString(quienHabla + (caso != null && estado != Estado.LLAMADA ? "  ·  " + caso.visitante.rol.etiqueta : ""),
-                r.x + 18, r.y + 24);
-        Font f = Tema.media(15);
-        g.setColor(Tema.tinta());
-        String vis = texto.substring(0, (int) letras);
-        Dibujo.parrafo(g, f, vis, r.x + 18, r.y + 47, r.width - 40, 20, r.y + r.height - 6);
-        if (letras >= texto.length() && ((int) (t * 2)) % 2 == 0) {
-            Dibujo.triangulo(g, r.x + r.width - 20, r.y + r.height - 14, 5, false, Tema.acento());
+        g.fillRoundRect(r.x + 22, r.y + 16, nw, 28, 14, 14);
+        g.setColor(Tema.altoContraste ? Color.BLACK : Tema.CREMA);
+        g.drawString(nombre, r.x + 37, r.y + 35);
+        // el texto
+        int ty = r.y + 74;
+        if (estado == Estado.VACIO) {
+            g.setColor(Tema.tintaSuave());
+            Dibujo.parrafo(g, Tema.fuente(Font.ITALIC, 16), j.isTerminada() ? "Ya cerramos por hoy."
+                    : "La ventanilla está libre. " + j.enFila() + (j.enFila() == 1 ? " persona espera" : " personas esperan")
+                    + " en la fila (cola FIFO: pasa primero quien llegó primero).", r.x + 26, ty, textoW, 23, r.y + 140);
+        } else if (estado == Estado.LLAMADA) {
+            // la llamada se lee como una transcripcion: lo anterior queda en gris
+            int yy = ty;
+            int desde = Math.max(0, lineaLlamada - 3);
+            for (int i = desde; i < lineaLlamada; i++) {
+                g.setColor(Tema.tintaSuave());
+                yy = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 14), llamada[i], r.x + 26, yy, textoW, 20, r.y + r.height) + 8;
+            }
+            g.setColor(Tema.tinta());
+            String vis = texto.substring(0, Math.min(texto.length(), (int) letras));
+            Dibujo.parrafo(g, Tema.media(16.5f), vis, r.x + 26, yy + 2, textoW, 23, r.y + r.height - 10);
+        } else {
+            g.setColor(Tema.tinta());
+            String vis = texto.substring(0, Math.min(texto.length(), (int) letras));
+            Dibujo.parrafo(g, Tema.media(16.5f), vis, r.x + 26, ty, textoW, 23, r.y + 128);
+            if (letras >= texto.length() && ((int) (t * 2)) % 2 == 0 && !texto.isEmpty()) {
+                Dibujo.triangulo(g, r.x + textoW + 18, r.y + 118, 5, false, Tema.acento());
+            }
         }
-    }
-
-    // ------------------------------------------------------------ preguntas
-    private void preguntas(Graphics2D g) {
-        Rectangle r = PREG;
-        Dibujo.tarjetaOscura(g, r, 22);
+        separadorAcciones(g, r, acc);
         switch (estado) {
-            case TURNO:
-                return;
             case LLAMADA:
-                encabezado(g, r, "LLAMADA DE TU JEFE", "Escucha las instrucciones del día");
-                boton(g, new Rectangle(r.x + 40, r.y + 120, r.width - 80, 64),
-                        lineaLlamada < llamada.length - 1 ? "Seguir escuchando   (Espacio)" : "Colgar y abrir la ventanilla   (Espacio)",
-                        Dibujo.Estilo.PRINCIPAL, this::avanzarLlamada);
+                boton(g, new Rectangle(acc.x, acc.y, acc.width, 56), lineaLlamada < llamada.length - 1 ? "Seguir  (Espacio)"
+                        : "Colgar  (Espacio)", Dibujo.Estilo.PRINCIPAL, this::avanzarLlamada);
+                pista(g, acc, "Don Ramiro te llama al celular. Escucha las instrucciones del día.");
                 return;
             case VACIO:
-                encabezado(g, r, "VENTANILLA LIBRE", j.enFila() + " personas esperando en la fila (cola FIFO)");
                 if (!j.isTerminada()) {
-                    boton(g, new Rectangle(r.x + 40, r.y + 120, r.width - 80, 64), "¡Siguiente!  Hacer pasar   (Espacio)",
-                            Dibujo.Estilo.PRINCIPAL, this::hacerPasar);
+                    boton(g, new Rectangle(acc.x, acc.y, acc.width, 56), "Siguiente  (Espacio)", Dibujo.Estilo.PRINCIPAL,
+                            this::hacerPasar);
                 }
+                boton(g, new Rectangle(acc.x, acc.y + 70, acc.width, 44), cel.abierto() ? "Guardar celular  (P)"
+                        : "Ver celular  (P)", Dibujo.Estilo.SECUNDARIO, cel::alternar);
                 return;
-            case RESULTADO:
-                boton(g, new Rectangle(r.x + 30, r.y + r.height - 76, r.width - 60, 54), "Despedir y continuar   (Espacio)",
-                        Dibujo.Estilo.PRINCIPAL, this::despedirVisitante);
-                return;
-            default:
+            case ENTRANDO:
+            case ATENDIENDO:
                 break;
+            default:
+                return;
         }
-        if (caso == null || estado == Estado.SALIENDO) {
+        if (caso == null) {
             return;
         }
-        encabezado(g, r, "PREGUNTAS", "Árbol de diálogo: " + caso.dialogo.visitados() + "/" + caso.dialogo.cantidadNodos()
-                + " nodos · arrástralas hacia el visitante");
+        // preguntas: arbol de dialogo (se arrastran hacia el visitante, clic o 1-6)
+        int qy = r.y + 140;
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(214, 178, 158));
+        g.fillRect(r.x + 26, qy - 8, textoW, 1);
+        g.setFont(Tema.fuente(Font.BOLD, 10.5f));
+        g.setColor(Tema.tintaSuave());
+        String cab = "PREGUNTAS  ·  arrastra una hacia el visitante (o 1-6)";
+        int cw = g.getFontMetrics().stringWidth(cab) + 16;
+        g.setColor(Tema.altoContraste ? Color.BLACK : Tema.PAPEL);
+        g.fillRect(r.x + 34, qy - 15, cw, 14);
+        g.setColor(Tema.tintaSuave());
+        g.drawString(cab, r.x + 42, qy - 4);
         List<NodoDialogo> op = j.opciones();
-        int y = r.y + 60;
-        int i = 0;
-        for (NodoDialogo n : op) {
-            if (i >= 5) {
-                break;
-            }
-            Rectangle br = new Rectangle(r.x + 14, y, r.width - 28, 44);
+        int colW = (textoW - 12) / 2;
+        for (int i = 0; i < op.size() && i < 6; i++) {
+            NodoDialogo n = op.get(i);
+            Rectangle br = new Rectangle(r.x + 26 + (i % 2) * (colW + 12), qy + 6 + (i / 2) * 46, colW, 40);
             boolean arrastrada = n == arrastraPregunta && (Math.abs(dragX - pressX) > 6 || Math.abs(dragY - pressY) > 6);
             if (arrastrada) {
-                g.setColor(new Color(255, 235, 215, 30));
+                g.setColor(new Color(200, 160, 140, 50));
                 g.fillRoundRect(br.x, br.y, br.width, br.height, 16, 16);
             } else {
                 tarjetaPregunta(g, br, i + 1, n, escritorioLibre() && encima(br), false);
             }
             zonasPreguntas.add(new Object[]{br, n});
-            y += 51;
-            i++;
         }
         if (op.isEmpty()) {
-            g.setColor(Tema.textoSuave());
+            g.setColor(Tema.tintaSuave());
             g.setFont(Tema.fuente(Font.ITALIC, 14));
-            g.drawString("Ya no tiene más que decir. Investiga o sella.", r.x + 22, y + 26);
+            g.drawString("Ya no tiene más que decir. Investiga en el celular o decide el sello.", r.x + 30, qy + 34);
+        }
+        // acciones
+        boolean listo = estado == Estado.ATENDIENDO;
+        Rectangle bd = new Rectangle(acc.x, acc.y, acc.width, 62);
+        if (listo) {
+            boton(g, bd, "Decidir el sello  (D)", Dibujo.Estilo.PRINCIPAL, this::decidir);
+        } else {
+            Dibujo.boton(g, bd, "Decidir el sello  (D)", Dibujo.Estilo.PRINCIPAL, false, false);
+        }
+        boton(g, new Rectangle(acc.x, acc.y + 76, acc.width, 44), cel.abierto() ? "Guardar celular  (P)" : "Abrir celular  (P)",
+                Dibujo.Estilo.SECUNDARIO, cel::alternar);
+        if (j.jugador.rol.tieneMiniJuego() && j.puedeUsarHabilidad()) {
+            String hab = j.jugador.rol.habilidad.length() > 16 ? "Mi habilidad" : j.jugador.rol.habilidad;
+            boton(g, new Rectangle(acc.x, acc.y + 132, acc.width, 44), hab + "  (U)", Dibujo.Estilo.OSCURO,
+                    this::usarHabilidad);
         }
     }
 
-    private void encabezado(Graphics2D g, Rectangle r, String titulo, String sub) {
-        Dibujo.tituloTarjeta(g, titulo, r.x + 18, r.y + 28, Tema.acento(), Tema.texto(), 14);
-        g.setFont(Tema.fuente(Font.PLAIN, 11.5f));
-        g.setColor(Tema.textoSuave());
-        g.drawString(Dibujo.recortar(g.getFontMetrics(), sub, r.width - 40), r.x + 32, r.y + 46);
+    private void separadorAcciones(Graphics2D g, Rectangle r, Rectangle acc) {
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(214, 178, 158, 160));
+        g.fillRect(acc.x - 18, r.y + 22, 1, r.height - 44);
     }
 
-    /** Tarjeta de una pregunta: crema; las CONFRONTACIONES (nodos insertados) en cobre. */
+    private void pista(Graphics2D g, Rectangle acc, String txt) {
+        g.setColor(Tema.tintaSuave());
+        Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 12), txt, acc.x, acc.y + 84, acc.width, 17, acc.y + acc.height);
+    }
+
+    /** Resultado del sello, dentro del cuadro de dialogo. */
+    private void resultado(Graphics2D g, Rectangle c) {
+        Jornada.Resultado r = ultimo;
+        boolean ok = r.efecto.acierto;
+        Iconos.marca(g, ok ? 2 : 3, c.x + 14, c.y + 16, 11);
+        g.setFont(Tema.fuente(Font.BOLD, 20));
+        g.setColor(ok ? Tema.bien().darker() : Tema.mal());
+        g.drawString((ok ? "¡CORRECTO!" : "ERROR") + "   " + (r.puntos >= 0 ? "+" : "") + r.puntos + " pts"
+                + (r.dinero != 0 ? "   $" + r.dinero : ""), c.x + 36, c.y + 24);
+        g.setFont(Tema.fuente(Font.PLAIN, 12.5f));
+        g.setColor(Tema.tintaSuave());
+        String ruta = "Árbol de consecuencias: " + r.ruta.replace("->", "›");
+        g.drawString(Dibujo.recortar(g.getFontMetrics(), ruta, c.width - 40), c.x + 36, c.y + 44);
+        Font f = Tema.fuente(Font.PLAIN, 13);
+        g.setColor(Tema.tinta());
+        int y = c.y + 72;
+        List<String> lineas = new ArrayList<>();
+        lineas.add("Era: " + r.caso.verdad.etiqueta + ". " + r.efecto.explicacion);
+        if (r.caso.pub.getExplicacion() != null) {
+            lineas.add(r.caso.pub.getExplicacion());
+        }
+        if (r.alcance > 0) {
+            int oleadas = r.propagacion == null ? 0 : r.propagacion.oleadas.size() - 1;
+            lineas.add("BFS: la publicación llegó a " + r.alcance + " cuentas del grafo social en " + oleadas
+                    + (oleadas == 1 ? " oleada." : " oleadas."));
+        }
+        if (r.corregidos > 0) {
+            lineas.add("Reporte: cuenta eliminada del grafo; " + r.corregidos + " personas corregidas.");
+        }
+        if (r.bonoRapidez) {
+            lineas.add("Bono por rapidez +30.");
+        }
+        if (r.seguroUsado) {
+            lineas.add("Tu seguro de reputación (tienda) anuló la advertencia de este error.");
+        }
+        if (j.jugador.rol == RolJugador.INFLUENCER) {
+            lineas.add("Influencer: tu decisión pesó x1,5 en puntos y en la ciudad.");
+        }
+        for (String l : lineas) {
+            y = Dibujo.parrafo(g, f, l, c.x + 36, y, c.width - 50, 18, c.y + c.height - 40);
+            y += 4;
+        }
+        // como cambio Ciudad Nova con este sello
+        String[] nom = {"Verificada", "Confianza", "Convivencia", "Bienestar", "Desinformación", "Conflictos"};
+        int x = c.x + 36, cy = c.y + c.height - 14;
+        g.setFont(Tema.fuente(Font.BOLD, 11.5f));
+        for (int i = 0; i < 6; i++) {
+            int d = cambioIndicadores[i];
+            if (d == 0) {
+                continue;
+            }
+            boolean bueno = i >= 4 ? d < 0 : d > 0;
+            String t = nom[i] + " " + (d > 0 ? "+" : "") + d;
+            int w = g.getFontMetrics().stringWidth(t) + 30;
+            if (x + w > c.x + c.width) {
+                break;
+            }
+            g.setColor(Tema.alfa(bueno ? Tema.SALVIA : Tema.LADRILLO, 40));
+            g.fillRoundRect(x, cy - 16, w, 22, 11, 11);
+            Dibujo.triangulo(g, x + 11, cy - 5, 4.5, d > 0, bueno ? Tema.SALVIA.darker() : Tema.LADRILLO);
+            g.setColor(bueno ? Tema.SALVIA.darker() : Tema.LADRILLO);
+            g.drawString(t, x + 20, cy);
+            x += w + 6;
+        }
+    }
+
     private void tarjetaPregunta(Graphics2D g, Rectangle br, int num, NodoDialogo n, boolean hover, boolean flotando) {
         boolean conf = n.insertado;
         int lift = hover ? 2 : 0;
@@ -1437,149 +1922,20 @@ public class OficinaVista extends Lienzo {
         }
     }
 
-    // ------------------------------------------------------------ celular con la noticia
-    /** Rectangulo de la pantalla util del celular (dentro del marco de la imagen). */
-    private static Rectangle pantallaCel() {
-        double k = CEL.height / 613.0;
-        return new Rectangle((int) (CEL.x + 33 * k), (int) (CEL.y + 92 * k), (int) (251 * k), (int) (436 * k));
-    }
 
-    private void celular(Graphics2D g) {
-        Rectangle c = CEL;
-        boolean destino = arrastraSello != null && c.contains(dragX, dragY);
-        if (destino) {
-            g.setColor(Tema.alfa(Tema.DORADO, (int) (110 + 60 * Math.sin(t * 8))));
-            g.fill(new RoundRectangle2D.Double(c.x + 4, c.y - 2, c.width - 8, c.height + 4, 60, 60));
-        }
-        if (!Tema.altoContraste) {
-            g.setColor(new Color(30, 12, 6, 70));
-            g.fill(new RoundRectangle2D.Double(c.x + 14, c.y + 10, c.width - 16, c.height - 4, 56, 56));
-        }
-        if (!Recursos.contener(g, "celular.png", c.x, c.y, c.width, c.height)) {
-            g.setColor(Color.BLACK);
-            g.fill(new RoundRectangle2D.Double(c.x + 20, c.y, c.width - 40, c.height, 50, 50));
-        }
-        Rectangle p = pantallaCel();
-        Graphics2D s = (Graphics2D) g.create();
-        s.clip(p);
-        s.setColor(Tema.altoContraste ? Color.BLACK : Color.WHITE);
-        s.fill(p);
-        if (caso == null) {
-            s.setColor(Tema.altoContraste ? Color.WHITE : new Color(238, 226, 220));
-            for (int i = 0; i < 4; i++) {
-                int y = p.y + 20 + i * 100;
-                s.fill(new Ellipse2D.Double(p.x + 12, y, 30, 30));
-                s.fillRoundRect(p.x + 50, y + 4, 120, 9, 9, 9);
-                s.fillRoundRect(p.x + 50, y + 20, 80, 8, 8, 8);
-                s.fillRoundRect(p.x + 12, y + 40, p.width - 24, 44, 10, 10);
-            }
-            s.setFont(Tema.fuente(Font.BOLD, 13));
-            s.setColor(Tema.tintaSuave());
-            Dibujo.centrado(s, "Sin publicaciones por revisar", p.getCenterX(), p.getCenterY());
-            s.dispose();
-            return;
-        }
-        Publicacion pub = caso.pub;
-        Cuenta cu = pub.getCuenta();
-        int y = p.y + 10;
-        // usuario
-        s.setColor(Tema.lila());
-        s.fill(new Ellipse2D.Double(p.x + 10, y, 34, 34));
-        String ini = cu == null ? "?" : cu.getNombre().substring(0, 1).toUpperCase();
-        s.setFont(Tema.fuente(Font.BOLD, 15));
-        s.setColor(Tema.CREMA);
-        Dibujo.centrado(s, ini, p.x + 27, y + 23);
-        String nombre = cu == null ? pub.getAutor() : cu.getNombre();
-        s.setFont(Tema.fuente(Font.BOLD, 12.5f));
-        s.setColor(Tema.tinta());
-        FontMetrics fm = s.getFontMetrics();
-        String nm = Dibujo.recortar(fm, nombre == null ? "Usuario" : nombre, p.width - 80);
-        s.drawString(nm, p.x + 52, y + 14);
-        if (cu != null && cu.estaVerificada()) {
-            int vx = p.x + 56 + fm.stringWidth(nm);
-            s.setColor(Tema.lila());
-            s.fill(new Ellipse2D.Double(vx, y + 3, 13, 13));
-            s.setColor(Color.WHITE);
-            s.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            Path2D ch = new Path2D.Double();
-            ch.moveTo(vx + 3.5, y + 9.5);
-            ch.lineTo(vx + 6, y + 12);
-            ch.lineTo(vx + 10, y + 6.5);
-            s.draw(ch);
-            s.setStroke(new BasicStroke(1));
-        }
-        s.setFont(Tema.fuente(Font.PLAIN, 10.5f));
-        s.setColor(Tema.tintaSuave());
-        s.drawString(Dibujo.recortar(s.getFontMetrics(), (cu == null ? "" : cu.getArroba() + " · ")
-                + (pub.getHora() == null ? "" : pub.getHora()), p.width - 60), p.x + 52, y + 30);
-        y += 44;
-        // ilustracion alusiva a la noticia
-        int ih = (int) (p.width * 0.66);
-        boolean video = pub.getImagen() != null && pub.getImagen().startsWith("video");
-        Ilustracion.dibujar(s, new Rectangle(p.x + 8, y, p.width - 16, ih), pub.getTexto(), video, t);
-        y += ih + 8;
-        // acciones (corazon, comentario, compartir)
-        s.setColor(Tema.tinta());
-        s.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        Path2D cor = new Path2D.Double();
-        double hx = p.x + 20, hy = y + 10;
-        cor.moveTo(hx, hy + 7);
-        cor.curveTo(hx - 11, hy - 1, hx - 5, hy - 10, hx, hy - 3);
-        cor.curveTo(hx + 5, hy - 10, hx + 11, hy - 1, hx, hy + 7);
-        s.draw(cor);
-        s.draw(new RoundRectangle2D.Double(p.x + 38, y + 1, 18, 15, 8, 8));
-        s.draw(new java.awt.geom.Line2D.Double(p.x + 74, y + 2, p.x + 74, y + 16));
-        s.draw(new java.awt.geom.Line2D.Double(p.x + 68, y + 8, p.x + 74, y + 2));
-        s.draw(new java.awt.geom.Line2D.Double(p.x + 80, y + 8, p.x + 74, y + 2));
-        s.setStroke(new BasicStroke(1));
-        int likes = 40 + Math.abs(pub.getTexto().hashCode()) % 900;
-        s.setFont(Tema.fuente(Font.BOLD, 11));
-        s.drawString(likes + " me gusta", p.x + 96, y + 14);
-        y += 28;
-        // texto (se ajusta para caber siempre dentro del celular)
-        int yMax = p.y + p.height - 26;
-        float tam = 13f;
-        List<String> lineas;
-        Font f;
-        do {
-            f = Tema.fuente(Font.PLAIN, tam);
-            lineas = Avisos.partir(s, f, pub.getTexto(), p.width - 22);
-            tam -= 0.5f;
-        } while (y + lineas.size() * (f.getSize2D() + 3) > yMax && tam > 9);
-        s.setFont(f);
-        s.setColor(Tema.tinta());
-        for (String l : lineas) {
-            if (y > yMax) {
-                break;
-            }
-            y += (int) (f.getSize2D() + 3);
-            s.drawString(l, p.x + 11, y);
-        }
-        // la peticion del visitante
-        s.setColor(Tema.alfa(Tema.COBRE, 30));
-        s.fillRect(p.x, p.y + p.height - 22, p.width, 22);
-        s.setFont(Tema.fuente(Font.ITALIC, 10.5f));
-        s.setColor(Tema.COBRE);
-        s.drawString(Dibujo.recortar(s.getFontMetrics(), "Te pide: " + caso.peticion, p.width - 16), p.x + 8, p.y + p.height - 7);
-        // sello estampado
-        if (caso.decidido != null && estado != Estado.SELLANDO) {
-            estampa(s, caso.decidido, p.getCenterX(), p.y + p.height * 0.42, 1, -0.22, 1f);
-        }
-        s.dispose();
-    }
-
+    /** Color de cada sello, tomado de la paleta del juego. */
     static Color colorSello(Veredicto v) {
         switch (v) {
-            case PUBLICAR: return new Color(70, 130, 64);
-            case OPINION: return new Color(84, 120, 172);
-            case ETIQUETA: return new Color(196, 150, 56);
-            case RECHAZAR: return new Color(214, 120, 60);
-            default: return new Color(176, 60, 58);
+            case PUBLICAR: return Tema.SALVIA;
+            case OPINION: return Tema.LILA;
+            case ETIQUETA: return Tema.DORADO.darker();
+            case RECHAZAR: return Tema.COBRE;
+            default: return Tema.LADRILLO;
         }
     }
 
     /** La marca que deja el sello: imagen del sello + anillo con su nombre. */
-    private void estampa(Graphics2D g, Veredicto v, double cx, double cy, double escala, double ang, float alfa) {
+    static void estampa(Graphics2D g, Veredicto v, double cx, double cy, double escala, double ang, float alfa) {
         Graphics2D s = (Graphics2D) g.create();
         s.translate(cx, cy);
         s.rotate(ang);
@@ -1606,443 +1962,166 @@ public class OficinaVista extends Lienzo {
         s.dispose();
     }
 
+    /** El sello baja y golpea la publicacion dentro del celular. */
     private void animacionSello(Graphics2D g) {
-        Rectangle p = pantallaCel();
+        Rectangle p = cel.zonaPublicacion();
+        Rectangle pan = cel.pantalla();
+        g = (Graphics2D) g.create();
+        g.clip(new RoundRectangle2D.Double(pan.x, pan.y, pan.width, pan.height, 48, 48));
         double k = suave(Math.min(1, selloT));
-        double esc0 = 2.4 - 1.4 * k;
-        Graphics2D s = (Graphics2D) g.create();
-        s.clip(new Rectangle(p.x - 120, p.y - 200, p.width + 240, p.height + 260));
-        estampa(s, selloV, p.getCenterX(), p.y + p.height * 0.42 - (1 - k) * 160, esc0, -0.22, (float) (0.3 + 0.7 * k));
-        s.dispose();
-    }
-
-    // ------------------------------------------------------------ bandeja de sellos
-    private void sellos(Graphics2D g) {
-        Rectangle r = SELLOS;
-        Dibujo.tarjetaOscura(g, r, 22);
-        g.setFont(Tema.fuente(Font.BOLD, 11.5f));
-        g.setColor(Tema.textoSuave());
-        Dibujo.centrado(g, "SELLOS · arrástralos sobre la publicación", r.getCenterX(), r.y + 20);
-        List<Veredicto> lista = j.sellos();
-        int n = lista.size();
-        int w = (r.width - 16) / Math.max(1, n);
-        String teclas = "ZXCVB";
-        boolean activoS = estado == Estado.ATENDIENDO && caso != null && escritorioLibre();
-        for (int i = 0; i < n; i++) {
-            Veredicto v = lista.get(i);
-            Rectangle br = new Rectangle(r.x + 8 + i * w, r.y + 28, w, r.height - 34);
-            boolean hover = activoS && br.contains(mx, my) && arrastraSello == null;
-            boolean enMano = v == arrastraSello;
-            double d = Math.min(w - 10, 76);
-            double cx = br.getCenterX(), cy = br.y + 8 + d / 2 - (hover ? 5 : 0);
-            if (!enMano) {
-                if (!Tema.altoContraste) {
-                    g.setColor(new Color(20, 8, 4, 90));
-                    g.fill(new Ellipse2D.Double(cx - d / 2 + 2, br.y + 12 + d / 2 - d / 2 + 4, d, d));
-                }
-                Composite antes = g.getComposite();
-                if (!activoS) {
-                    g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.55f));
-                }
-                if (!Recursos.contener(g, v.imagen(), cx - d / 2, cy - d / 2, d, d)) {
-                    Dibujo.selloRespaldo(g, cx, cy, d / 2, colorSello(v), "");
-                }
-                g.setComposite(antes);
-            } else {
-                g.setColor(new Color(255, 235, 215, 40));
-                g.draw(new Ellipse2D.Double(cx - d / 2, cy - d / 2, d, d));
-            }
-            Font f = Dibujo.ajustar(g, v.sello, Font.BOLD, 11.5f, w - 6);
-            g.setFont(f);
-            g.setColor(hover ? Tema.acento2() : Tema.texto());
-            Dibujo.centrado(g, v.sello, cx, br.y + d + 30);
-            g.setFont(Tema.fuente(Font.PLAIN, 10));
-            g.setColor(Tema.textoSuave());
-            Dibujo.centrado(g, "(" + teclas.charAt(i) + ")", cx, br.y + d + 45);
-            if (activoS) {
-                zonasSellos.add(new Object[]{new Rectangle((int) (cx - d / 2), (int) (cy - d / 2), (int) d, (int) d + 30), v});
-            }
-        }
-    }
-
-    // ------------------------------------------------------------ monitor
-    private void monitor(Graphics2D g) {
-        Rectangle r = MONITOR;
-        Dibujo.tarjetaOscura(g, r, 24);
-        Herramienta[] hs = Herramienta.values();
-        boolean conHab = rol().tieneMiniJuego();
-        int ntabs = hs.length + (conHab ? 1 : 0);
-        int tw = (r.width - 20) / ntabs;
-        String[] cortos = {"Perfil", "Directorio", "Lupa", "Imagen", "Corresp.", "Red"};
-        for (int i = 0; i < ntabs; i++) {
-            Rectangle tr = new Rectangle(r.x + 10 + i * tw, r.y + 10, tw - 5, 52);
-            boolean sel = i == tab;
-            boolean hv = encima(tr) && escritorioLibre();
-            if (i < hs.length) {
-                Herramienta h = hs[i];
-                boolean porDia = h.dia > j.dia, porRol = !j.delRol(h);
-                boolean bloqueada = porDia || porRol;
-                // no aplica a ESTE cliente (sin credencial, sin foto...): pestana deshabilitada con una X roja
-                boolean noAplica = !bloqueada && caso != null && j.getActual() != null && j.resultados(h) == null
-                        && j.motivoNoAplica(h) != null;
-                g.setColor(Tema.altoContraste ? (sel ? Color.YELLOW : Color.BLACK) : sel ? (noAplica ? new Color(120, 52, 40) : Tema.COBRE)
-                        : bloqueada || noAplica ? new Color(52, 30, 22) : hv ? new Color(110, 64, 44) : new Color(86, 50, 35));
-                g.fillRoundRect(tr.x, tr.y, tr.width, tr.height, 14, 14);
-                Color ci = bloqueada || noAplica ? new Color(140, 100, 84) : Tema.altoContraste && sel ? Color.BLACK : Tema.CREMA;
-                if (noAplica) {
-                    g.setColor(Tema.mal());
-                    g.fill(new Ellipse2D.Double(tr.x + tr.width - 17, tr.y + 3, 14, 14));
-                    g.setColor(Tema.CREMA);
-                    g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    g.drawLine(tr.x + tr.width - 13, tr.y + 7, tr.x + tr.width - 7, tr.y + 13);
-                    g.drawLine(tr.x + tr.width - 7, tr.y + 7, tr.x + tr.width - 13, tr.y + 13);
-                    g.setStroke(new BasicStroke(1));
-                }
-                if (bloqueada) {
-                    Iconos.candado(g, tr.getCenterX(), tr.y + 21, 8, ci);
-                } else {
-                    Iconos.herramienta(g, i, tr.getCenterX(), tr.y + 20, 10, ci);
-                }
-                g.setColor(ci);
-                g.setFont(Tema.fuente(Font.PLAIN, 10.5f));
-                String et = "QWERTY".charAt(i) + " · " + cortos[i];
-                Dibujo.centrado(g, et, tr.getCenterX(), tr.y + 45);
-            } else {
-                // la pestana de la HABILIDAD del rol
-                Color rc = Dibujo.colorRol(rol());
-                double pul = j.puedeUsarHabilidad() && estado == Estado.ATENDIENDO ? 0.5 + 0.5 * Math.sin(t * 4) : 0;
-                g.setColor(sel ? rc : Tema.mezclar(new Color(86, 50, 35), rc, 0.35 + 0.3 * pul));
-                g.fillRoundRect(tr.x, tr.y, tr.width, tr.height, 14, 14);
-                Dibujo.emblemaRol(g, rol(), tr.getCenterX(), tr.y + 20, 12, false);
-                g.setColor(Tema.altoContraste && sel ? Color.BLACK : Tema.CREMA);
-                g.setFont(Tema.fuente(Font.BOLD, 10));
-                Dibujo.centrado(g, "U · Habilidad", tr.getCenterX(), tr.y + 45);
-            }
-            final int ii = i;
-            if (escritorioLibre()) {
-                zona(tr, () -> tab = ii);
-            }
-        }
-        Rectangle p = new Rectangle(r.x + 12, r.y + 72, r.width - 24, r.height - 84);
-        g.setColor(Tema.altoContraste ? Color.BLACK : new Color(34, 18, 14));
-        g.fillRoundRect(p.x, p.y, p.width, p.height, 16, 16);
-        Graphics2D s = (Graphics2D) g.create();
-        s.clip(new RoundRectangle2D.Double(p.x, p.y, p.width, p.height, 16, 16));
-        if (tab >= hs.length) {
-            pantallaHabilidad(s, p);
-        } else {
-            contenidoPantalla(s, p, hs[tab]);
-        }
-        s.dispose();
-    }
-
-    private void contenidoPantalla(Graphics2D g, Rectangle p, Herramienta h) {
-        Color crema = Tema.texto();
-        g.setFont(Tema.fuente(Font.BOLD, 15));
-        g.setColor(Tema.acento2());
-        g.drawString(h.nombre.toUpperCase(), p.x + 16, p.y + 28);
-        g.setColor(Tema.alfa(Tema.DORADO, 60));
-        g.fillRect(p.x + 16, p.y + 36, 60, 2);
-        if (!j.delRol(h)) {
-            Iconos.candado(g, p.getCenterX(), p.getCenterY() - 60, 22, Tema.textoSuave());
-            centrado(g, "Tu rol (" + rol().nombre + ") no usa esta herramienta", p, Tema.textoSuave(), 0);
-            g.setFont(Tema.fuente(Font.PLAIN, 13));
-            g.setColor(Tema.textoSuave());
-            String alt = rol().tieneMiniJuego() ? "Usa tu habilidad única: pestaña \"Habilidad\" (tecla U)."
-                    : "Esta herramienta es de otro rol.";
-            Dibujo.centrado(g, alt, p.getCenterX(), p.getCenterY() + 28);
-            return;
-        }
-        if (h.dia > j.dia) {
-            Iconos.candado(g, p.getCenterX(), p.getCenterY() - 50, 22, Tema.textoSuave());
-            centrado(g, "Disponible desde el día " + h.dia, p, Tema.textoSuave(), 0);
-            return;
-        }
-        if (j.enApagon()) {
-            for (int i = 0; i < 400; i++) {
-                int c = 60 + azar.nextInt(160);
-                g.setColor(new Color(c, (int) (c * 0.8), (int) (c * 0.7)));
-                g.fillRect(p.x + azar.nextInt(p.width), p.y + azar.nextInt(p.height), 3, 2);
-            }
-            centrado(g, "SIN SEÑAL: APAGÓN", p, Tema.CREMA, 0);
-            return;
-        }
-        if (caso == null) {
-            centrado(g, "Esperando al siguiente caso...", p, Tema.textoSuave(), 0);
-            return;
-        }
-        if (escaneando == h) {
-            g.setColor(Tema.alfa(Tema.DORADO, 70));
-            g.fillRoundRect(p.x + 30, p.y + p.height / 2, p.width - 60, 18, 18, 18);
-            g.setColor(Tema.acento2());
-            g.fillRoundRect(p.x + 30, p.y + p.height / 2, (int) ((p.width - 60) * Math.min(1, escaneoT)), 18, 18, 18);
-            g.setFont(Tema.fuente(Font.BOLD, 14));
-            g.setColor(crema);
-            g.drawString(h == Herramienta.DIRECTORIO ? "Buscando en el AVL..." : h == Herramienta.RED
-                    ? "Recorriendo el grafo (BFS / DFS)..." : "Analizando...", p.x + 30, p.y + p.height / 2 - 12);
-            int ly = p.y + 50 + (int) ((t * 160) % (p.height - 60));
-            g.setColor(Tema.alfa(Tema.DORADO, 50));
-            g.fillRect(p.x, ly, p.width, 4);
-            return;
-        }
-        List<String> res = j.resultados(h);
-        String noAplica = res == null && j.getActual() != null ? j.motivoNoAplica(h) : null;
-        if (noAplica != null) {
-            // herramienta deshabilitada para este cliente: se explica en rojo por que
-            g.setColor(Tema.textoSuave());
-            Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13.5f), descripcion(h), p.x + 16, p.y + 64, p.width - 32, 19, p.y + 120);
-            Rectangle av = new Rectangle(p.x + 30, p.y + p.height / 2 - 40, p.width - 60, 100);
-            g.setColor(Tema.altoContraste ? Color.BLACK : Tema.alfa(Tema.LADRILLO, 230));
-            g.fillRoundRect(av.x, av.y, av.width, av.height, 18, 18);
-            g.setColor(Tema.altoContraste ? Color.RED : new Color(240, 140, 120));
-            g.drawRoundRect(av.x, av.y, av.width, av.height, 18, 18);
-            Iconos.marca(g, 3, av.x + 26, av.y + 30, 9);
-            g.setFont(Tema.fuente(Font.BOLD, 14));
-            g.setColor(Tema.CREMA);
-            g.drawString("No se puede usar con este cliente", av.x + 46, av.y + 35);
-            Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13), noAplica, av.x + 20, av.y + 60, av.width - 40, 18, av.y + av.height - 4);
-            g.setFont(Tema.fuente(Font.PLAIN, 11.5f));
-            g.setColor(Tema.textoSuave());
-            Dibujo.centrado(g, "Con el siguiente cliente las herramientas se reinician.", p.getCenterX(), av.y + av.height + 28);
-            return;
-        }
-        int y = p.y + 60;
-        if (h == Herramienta.RED && res != null) {
-            red3d.dibujar(g, new Rectangle(p.x + 4, p.y + 44, p.width - 8, 170), j.jugador.ciudad, caso.origen, t);
-            y = p.y + 232;
-        }
-        if (h == Herramienta.DIRECTORIO && res != null) {
-            Rectangle ar = new Rectangle(p.x + 6, p.y + p.height - 128, p.width - 12, 92);
-            Cuenta c = caso.pub.getCuenta();
-            VistaArboles.avl(g, j.jugador.directorio, c == null ? null : c.getArroba(), ar, true);
-            if (j.puedeLlamar()) {
-                boton(g, new Rectangle(p.x + p.width - 150, p.y + p.height - 38, 140, 30), "Llamar  (K)",
-                        Dibujo.Estilo.EXITO, this::llamar);
-            }
-        }
-        if (res == null) {
-            String acc;
-            switch (h) {
-                case PERFIL: acc = "Escanear perfil"; break;
-                case DIRECTORIO: acc = "Buscar en el directorio"; break;
-                case LUPA: acc = "Abrir la lupa"; break;
-                case IMAGEN: acc = "Búsqueda inversa"; break;
-                case CORRESPONSAL: acc = "Enviar corresponsal"; break;
-                default: acc = "Escanear la red"; break;
-            }
-            g.setColor(Tema.textoSuave());
-            Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13.5f), descripcion(h), p.x + 16, p.y + 64, p.width - 32, 19, p.y + 120);
-            if (estado == Estado.ATENDIENDO) {
-                boton(g, new Rectangle(p.x + 50, p.y + p.height / 2 - 10, p.width - 100, 56), acc, Dibujo.Estilo.PRINCIPAL,
-                        () -> usarHerramienta(h));
-                g.setFont(Tema.fuente(Font.PLAIN, 11.5f));
-                g.setColor(Tema.textoSuave());
-                Dibujo.centrado(g, "Cuesta minutos del reloj · tecla " + "QWERTY".charAt(h.ordinal()), p.getCenterX(),
-                        p.y + p.height / 2 + 70);
-            }
-            return;
-        }
-        Font f = Tema.fuente(Font.PLAIN, 13);
-        g.setFont(f);
-        for (String l : res) {
-            int tp = Iconos.tipo(l);
-            String limpio = Iconos.sinPrefijo(l);
-            boolean primera = true;
-            for (String parte : Avisos.partir(g, f, limpio, p.width - 52)) {
-                if (y > p.y + p.height - 8) {
-                    break;
-                }
-                if (primera && tp != 0) {
-                    Iconos.marca(g, tp, p.x + 22, y - 4, 6);
-                }
-                g.setColor(tp == 0 ? crema : Iconos.color(tp, crema));
-                g.drawString(parte, p.x + (tp != 0 ? 36 : 16), y);
-                y += 18;
-                primera = false;
-            }
-            y += 4;
-        }
-        if (h == Herramienta.CORRESPONSAL && j.corresponsalEnCamino()) {
-            g.setColor(Tema.alfa(Tema.DORADO, 70));
-            g.fillRoundRect(p.x + 20, y + 10, p.width - 40, 14, 14, 14);
-            g.setColor(Tema.acento2());
-            g.fillRoundRect(p.x + 20, y + 10, (int) ((p.width - 40) * j.avanceCorresponsal()), 14, 14, 14);
-            g.setFont(Tema.fuente(Font.PLAIN, 12.5f));
-            g.setColor(crema);
-            g.drawString("La moto va en camino... ábrela en el MAPA (botón de arriba)", p.x + 20, y + 44);
-        }
-        if (h == Herramienta.LUPA && estado == Estado.ATENDIENDO && caso.visitante.credencial != null) {
-            boton(g, new Rectangle(p.x + 60, p.y + p.height - 70, p.width - 120, 48), "Abrir la lupa  (L)",
-                    Dibujo.Estilo.LILA, this::abrirLupa);
-        }
-    }
-
-    private void pantallaHabilidad(Graphics2D g, Rectangle p) {
-        RolJugador rr = rol();
-        Dibujo.emblemaRol(g, rr, p.x + 50, p.y + 52, 30, true);
-        g.setFont(Tema.fuente(Font.BOLD, 19));
-        g.setColor(Tema.acento2());
-        g.drawString("Habilidad: " + rr.habilidad, p.x + 94, p.y + 46);
-        g.setFont(Tema.fuente(Font.PLAIN, 12));
-        g.setColor(Tema.textoSuave());
-        g.drawString("Solo la tiene el rol " + rr.nombre + " · una vez por caso", p.x + 94, p.y + 66);
-        g.setColor(Tema.texto());
-        int y = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13.5f), rr.descripcionHabilidad, p.x + 20, p.y + 106,
-                p.width - 40, 20, p.y + 190);
-        if (caso == null) {
-            centrado(g, "Espera a que llegue alguien a la ventanilla.", p, Tema.textoSuave(), 60);
-            return;
-        }
-        if (caso.habilidadUsada) {
-            g.setFont(Tema.fuente(Font.BOLD, 13));
-            g.setColor(Tema.acento2());
-            g.drawString("RESULTADO (anotado en la libreta)", p.x + 20, y + 14);
-            y += 38;
-            g.setFont(Tema.fuente(Font.PLAIN, 13));
-            for (String l : caso.pistasHabilidad) {
-                int tp = Iconos.tipo(l);
-                if (tp != 0) {
-                    Iconos.marca(g, tp, p.x + 26, y - 4, 6);
-                }
-                g.setColor(tp == 0 ? Tema.texto() : Iconos.color(tp, Tema.texto()));
-                y = Dibujo.parrafo(g, g.getFont(), Iconos.sinPrefijo(l), p.x + 40, y, p.width - 60, 18, p.y + p.height - 10);
-                y += 6;
-            }
-            return;
-        }
-        if (estado == Estado.ATENDIENDO) {
-            boton(g, new Rectangle(p.x + 50, p.y + p.height - 120, p.width - 100, 60), "¡Usar mi habilidad!  (U)",
-                    Dibujo.Estilo.PRINCIPAL, this::usarHabilidad);
-            g.setFont(Tema.fuente(Font.PLAIN, 11.5f));
-            g.setColor(Tema.textoSuave());
-            Dibujo.centrado(g, "El reloj se detiene mientras juegas; al terminar se cobran unos minutos.", p.getCenterX(),
-                    p.y + p.height - 36);
-        }
-    }
-
-    private static String descripcion(Herramienta h) {
-        switch (h) {
-            case PERFIL: return "Antigüedad de la cuenta, seguidores, fuente citada y señales de alerta.";
-            case DIRECTORIO: return "¿La cuenta es oficial? Búsqueda O(log n) en un árbol AVL de cuentas oficiales.";
-            case LUPA: return "Compara la cara del visitante con la foto de su credencial. Señala la diferencia.";
-            case IMAGEN: return "¿La foto ya existía en otro lugar o en otra fecha?";
-            case CORRESPONSAL: return "Va al barrio por la ruta más corta (Dijkstra en el grafo de la ciudad).";
-            default: return "¿Quién lo compartió primero? BFS por oleadas y DFS en el grafo social.";
-        }
-    }
-
-    // ------------------------------------------------------------ libreta de pistas
-    private void libreta(Graphics2D g) {
-        Rectangle r = LIBRETA;
-        RoundRectangle2D s = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 16, 16);
-        Dibujo.sombra(g, s, 5, 3);
-        g.setColor(Tema.altoContraste ? Color.BLACK : new Color(253, 246, 232));
-        g.fill(s);
-        Graphics2D c = (Graphics2D) g.create();
-        c.clip(s);
-        if (!Tema.altoContraste) {
-            c.setColor(new Color(217, 178, 166, 110));
-            for (int y = r.y + 46; y < r.y + r.height; y += 20) {
-                c.drawLine(r.x + 30, y, r.x + r.width - 8, y);
-            }
-            c.setColor(new Color(192, 71, 58, 110));
-            c.drawLine(r.x + 52, r.y + 6, r.x + 52, r.y + r.height - 6);
-            c.setColor(new Color(242, 179, 94, 60));
-            c.fillRect(r.x, r.y, r.width, 34);
-        }
-        c.dispose();
-        // espiral
-        for (int y = r.y + 14; y < r.y + r.height - 6; y += 18) {
-            g.setColor(Tema.altoContraste ? Color.WHITE : new Color(110, 54, 33));
-            g.fill(new Ellipse2D.Double(r.x + 10, y, 9, 9));
-            g.setColor(Tema.altoContraste ? Color.GRAY : new Color(200, 160, 140));
-            g.setStroke(new BasicStroke(2));
-            g.drawArc(r.x + 2, y - 3, 16, 14, 90, 180);
+        double esc0 = 2.4 - 1.35 * k;
+        estampa(g, selloV, p.getCenterX(), p.y + 150 - (1 - k) * 180, esc0, -0.22, (float) (0.3 + 0.7 * k));
+        if (selloT > 0.85) {
+            double f = (selloT - 0.85) / 0.15;
+            g.setColor(Tema.alfa(Tema.DORADO, (int) (120 * (1 - f))));
+            g.setStroke(new BasicStroke(5));
+            g.draw(new Ellipse2D.Double(p.getCenterX() - 130 - f * 40, p.y + 150 - 60 - f * 20, 260 + f * 80, 120 + f * 40));
             g.setStroke(new BasicStroke(1));
         }
-        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(170, 120, 96, 150));
-        g.draw(s);
-        List<String> pistas = pistas();
-        g.setFont(Tema.fuente(Font.BOLD, 14));
-        g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.COBRE);
-        g.drawString("Libreta de pistas", r.x + 62, r.y + 24);
-        g.setFont(Tema.fuente(Font.PLAIN, 11));
-        g.setColor(Tema.tintaSuave());
-        String cnt = pistas.size() + (pistas.size() == 1 ? " pista" : " pistas") + (pistas.size() > (r.height - 70) / 20 ? " · rueda para ver más" : "");
-        g.drawString(cnt, r.x + r.width - 14 - g.getFontMetrics().stringWidth(cnt), r.y + 23);
-        Font f = Tema.media(12.5f);
-        g.setFont(f);
-        int y = r.y + 58;
-        int visibles = (r.height - 70) / 20;
-        int maxScroll = Math.max(0, pistas.size() - visibles);
-        libretaScroll = Math.min(libretaScroll, maxScroll);
-        int desde = Math.max(0, pistas.size() - visibles - libretaScroll);
-        for (int i = desde; i < Math.min(pistas.size(), desde + visibles); i++) {
-            String pi = pistas.get(i);
-            int tp = Iconos.tipo(pi);
-            if (tp == 0) {
-                g.setColor(Tema.altoContraste ? Color.WHITE : Tema.COBRE);
-                g.fill(new Ellipse2D.Double(r.x + 64, y - 8, 6, 6));
-            } else {
-                Iconos.marca(g, tp, r.x + 67, y - 5, 6);
-            }
-            g.setColor(Tema.tinta());
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), Iconos.sinPrefijo(pi), r.width - 96), r.x + 80, y);
-            y += 20;
-        }
-        if (pistas.isEmpty()) {
-            g.setFont(Tema.fuente(Font.ITALIC, 12.5f));
-            g.setColor(Tema.tintaSuave());
-            g.drawString("Pregunta, investiga y usa tu habilidad: las pistas se anotan solas.", r.x + 64, y);
-        }
+        g.dispose();
     }
 
-    private List<String> pistas() {
-        List<String> l = new ArrayList<>();
-        if (caso == null) {
-            return l;
-        }
-        for (NodoDialogo n : caso.dialogo.preorden()) {
-            if (n.visitado && n.pista != null) {
-                l.add(n.pista);
-            }
-        }
-        for (List<String> rs : caso.resultados.values()) {
-            for (String s : rs) {
-                if (Iconos.tipo(s) != 0) {
-                    l.add(s);
-                }
-            }
-        }
-        l.addAll(caso.pistasHabilidad);
-        if (llamadaInst != null) {
-            l.add("Llamada: " + llamadaInst);
-        }
-        return l;
-    }
-
-    // ------------------------------------------------------------ indicadores y noticiero
+    // ------------------------------------------------------------ noticiero
     /**
-     * Noticiero. Los indicadores de Ciudad Nova ya NO se muestran aqui: estan
-     * dentro del boton MAPA (con la salud de la ciudad en su insignia).
+     * El noticiero a toda pantalla: cabecera del canal, la senal (estudio o en
+     * vivo), la escaleta del programa a la derecha y la cinta de titulares.
      */
-    private void tv(Graphics2D g) {
-        Rectangle tk = TV;
-        Dibujo.tarjetaOscura(g, tk, 18);
-        Graphics2D s = (Graphics2D) g.create();
-        s.clipRect(tk.x + 104, tk.y, tk.width - 112, tk.height);
-        s.setFont(Tema.fuente(Font.PLAIN, 13));
-        String linea = String.join("     •     ", ticker);
-        int lw2 = s.getFontMetrics().stringWidth(linea) + 80;
-        double x = tk.x + tk.width + (tickerX % (lw2 + tk.width));
-        s.setColor(Tema.texto());
-        s.drawString(linea, (float) x, tk.y + 29);
-        s.dispose();
-        g.setColor(Tema.altoContraste ? Color.RED : Tema.COBRE);
-        g.fillRoundRect(tk.x + 8, tk.y + 8, 90, tk.height - 16, 15, 15);
-        g.setFont(Tema.fuente(Font.BOLD, 11.5f));
+    private void noticiero(Graphics2D g) {
+        if (segmentos.isEmpty()) {
+            terminarNoticias();
+            return;
+        }
+        // fondo del set: degradado de la paleta con franjas diagonales que se mueven
+        if (Tema.altoContraste) {
+            g.setColor(Color.BLACK);
+            g.fillRect(0, BARRA, W, H - BARRA);
+        } else {
+            g.setPaint(new GradientPaint(0, BARRA, new Color(60, 30, 26, 246), W, H, new Color(30, 16, 22, 250)));
+            g.fillRect(0, BARRA, W, H - BARRA);
+            Graphics2D f = (Graphics2D) g.create();
+            f.clipRect(0, BARRA, W, H - BARRA);
+            f.setColor(Tema.alfa(Tema.COBRE, 22));
+            double off = (t * 30) % 120;
+            for (int x = -900; x < W + 200; x += 120) {
+                Path2D franja = new Path2D.Double();
+                franja.moveTo(x + off, BARRA);
+                franja.lineTo(x + off + 46, BARRA);
+                franja.lineTo(x + off + 46 + 700, H);
+                franja.lineTo(x + off + 700, H);
+                franja.closePath();
+                f.fill(franja);
+            }
+            f.dispose();
+        }
+        int i = Math.min(segIdx, segmentos.size() - 1);
+        Noticiero.Segmento s = segmentos.get(i);
+        // cabecera del canal
+        int cx = 40, cy = BARRA + 22;
+        g.setColor(Tema.LADRILLO);
+        g.fillRoundRect(cx, cy, 58, 40, 12, 12);
+        g.setFont(Tema.fuente(Font.BOLD, 20));
         g.setColor(Tema.CREMA);
-        Dibujo.centrado(g, "NOTICIAS", tk.x + 53, tk.y + 28);
+        Dibujo.centrado(g, "NN", cx + 29, cy + 28);
+        g.setFont(Tema.fuente(Font.BOLD, 22));
+        g.drawString(Noticiero.CANAL.toUpperCase(), cx + 74, cy + 22);
+        g.setFont(Tema.fuente(Font.PLAIN, 13));
+        g.setColor(Tema.textoSuave());
+        g.drawString((noticiasNoche ? "Edición de la noche" : "Edición de la mañana") + "  ·  Día " + j.dia + " de "
+                + Historia.DIAS + "  ·  " + Historia.TITULOS[j.dia], cx + 74, cy + 40);
+        // la senal
+        Rectangle tv = new Rectangle(40, BARRA + 82, 940, 630);
+        TeleVista.dibujar(g, tv, s, (int) segLetras, t, t - segInicioT, noticiasNoche);
+        // escaleta: los bloques del programa
+        Rectangle es = new Rectangle(tv.x + tv.width + 24, tv.y, W - (tv.x + tv.width + 24) - 40, tv.height);
+        g.setColor(Tema.altoContraste ? Color.BLACK : new Color(255, 235, 215, 16));
+        g.fillRoundRect(es.x, es.y, es.width, es.height, 22, 22);
+        g.setFont(Tema.fuente(Font.BOLD, 12));
+        g.setColor(Tema.acento2());
+        g.drawString("EN ESTA EDICIÓN", es.x + 20, es.y + 30);
+        int y = es.y + 50;
+        for (int k = 0; k < segmentos.size(); k++) {
+            Noticiero.Segmento sk = segmentos.get(k);
+            boolean actual = k == i, visto = k < i;
+            Rectangle fr = new Rectangle(es.x + 12, y, es.width - 24, 58);
+            if (actual) {
+                g.setColor(Tema.alfa(Tema.COBRE, 200));
+                g.fillRoundRect(fr.x, fr.y, fr.width, fr.height, 16, 16);
+                double prog = sk.texto.isEmpty() ? 1 : segLetras / sk.texto.length();
+                g.setColor(Tema.alfa(Tema.DORADO, 220));
+                g.fillRoundRect(fr.x + 12, fr.y + fr.height - 9, (int) ((fr.width - 24) * prog), 4, 4, 4);
+            }
+            g.setColor(visto ? Tema.SALVIA : actual ? Tema.CREMA : Tema.alfa(Tema.CREMA, 70));
+            g.fill(new Ellipse2D.Double(fr.x + 12, fr.y + 17, 22, 22));
+            g.setFont(Tema.fuente(Font.BOLD, 11));
+            g.setColor(actual ? Tema.COBRE : Tema.MADERA);
+            Dibujo.centrado(g, String.valueOf(k + 1), fr.x + 23, fr.y + 32);
+            g.setFont(Tema.fuente(Font.BOLD, 12));
+            g.setColor(actual ? Tema.CREMA : visto ? Tema.textoSuave() : Tema.texto());
+            g.drawString(Dibujo.recortar(g.getFontMetrics(), sk.rotulo, fr.width - 56), fr.x + 44, fr.y + 25);
+            g.setFont(Tema.fuente(Font.PLAIN, 10.5f));
+            g.setColor(actual ? Tema.alfa(Tema.CREMA, 200) : Tema.textoSuave());
+            g.drawString(sk.zona >= 0 ? "En vivo · " + Noticiero.REPORTERO : "Estudio · " + Noticiero.PRESENTADORA,
+                    fr.x + 44, fr.y + 42);
+            y += 64;
+        }
+        // termometro de la ciudad: los 6 indicadores en vivo
+        CiudadEstado ci = j.jugador.ciudad;
+        String[] nom = {"Verificada", "Confianza", "Convivencia", "Bienestar", "Desinformación", "Conflictos"};
+        int[] val = indicadores(ci);
+        y += 14;
+        g.setFont(Tema.fuente(Font.BOLD, 12));
+        g.setColor(Tema.acento2());
+        g.drawString("TERMÓMETRO DE CIUDAD NOVA", es.x + 20, y);
+        y += 8;
+        for (int k = 0; k < 6; k++) {
+            int yy = y + 18 + k * 22;
+            if (yy > es.y + es.height - 130) {
+                break;
+            }
+            boolean malo = k >= 4;
+            boolean bien = malo ? val[k] < 35 : val[k] >= 50;
+            g.setFont(Tema.fuente(Font.PLAIN, 11));
+            g.setColor(Tema.texto());
+            g.drawString(nom[k], es.x + 20, yy);
+            String vs = val[k] + (k == 4 ? " %" : "");
+            g.drawString(vs, es.x + es.width - 20 - g.getFontMetrics().stringWidth(vs), yy);
+            int bx = es.x + 120, bw = es.width - 180;
+            g.setColor(new Color(0, 0, 0, 90));
+            g.fillRoundRect(bx, yy - 8, bw, 7, 7, 7);
+            g.setColor(bien ? Tema.SALVIA : Tema.LADRILLO);
+            g.fillRoundRect(bx, yy - 8, bw * Math.max(0, Math.min(100, val[k])) / 100, 7, 7, 7);
+        }
+        boolean fin = i >= segmentos.size() - 1 && segLetras >= s.texto.length();
+        String sig = fin ? (reviendo ? "Volver a la ventanilla" : noticiasNoche ? "Resumen del día" : "Ir a trabajar")
+                + "  (Espacio)" : "Siguiente  (Espacio)";
+        boton(g, new Rectangle(es.x + 12, es.y + es.height - 116, es.width - 24, 50), sig, Dibujo.Estilo.PRINCIPAL,
+                this::avanzarNoticia);
+        boton(g, new Rectangle(es.x + 12, es.y + es.height - 58, es.width - 24, 44), "Saltar  (Esc)", Dibujo.Estilo.SECUNDARIO,
+                this::terminarNoticias);
+        // cinta de titulares a todo lo ancho
+        int ty = H - 52;
+        g.setColor(Tema.altoContraste ? Color.BLACK : new Color(24, 14, 14, 240));
+        g.fillRect(0, ty, W, 52);
+        g.setColor(Tema.LADRILLO);
+        g.fillRect(0, ty, 170, 52);
+        g.setColor(Tema.DORADO);
+        g.fillRect(0, ty, W, 2);
+        g.setFont(Tema.fuente(Font.BOLD, 14));
+        g.setColor(Tema.CREMA);
+        g.drawString(noticiasNoche ? "TITULARES" : "ÚLTIMA HORA", 22, ty + 32);
+        List<String> c = cinta.isEmpty() ? new ArrayList<String>() : cinta;
+        if (c.isEmpty()) {
+            c.add(Noticiero.CANAL + " · Día " + j.dia + " de la semana electoral");
+        }
+        Graphics2D k = (Graphics2D) g.create();
+        k.clipRect(180, ty, W - 190, 52);
+        k.setFont(Tema.fuente(Font.PLAIN, 14));
+        String linea = String.join("      ●      ", c);
+        int lw = k.getFontMetrics().stringWidth(linea) + 160;
+        double x = W - ((t * 70) % (lw + W));
+        k.setColor(Tema.CREMA);
+        k.drawString(linea, (float) x, ty + 32);
+        k.dispose();
     }
 
     /** Los 6 indicadores de Ciudad Nova con su barra (se usan en el panel del MAPA). */
@@ -2087,47 +2166,6 @@ public class OficinaVista extends Lienzo {
             g.fillRoundRect(r.x + 36, y + 21, bw * val[i] / 100, 8, 8, 8);
             Iconos.marca(g, bueno ? 2 : 1, r.x + 24, y + 25, 5);
             y += fila;
-        }
-    }
-
-    // ------------------------------------------------------------ resultado de un sello
-    private void tarjetaResultado(Graphics2D g) {
-        Jornada.Resultado r = ultimo;
-        Rectangle c = new Rectangle(PREG.x + 14, PREG.y + 14, PREG.width - 28, PREG.height - 106);
-        boolean ok = r.efecto.acierto;
-        Dibujo.tarjetaPapel(g, c, 18);
-        g.setColor(ok ? Tema.bien() : Tema.mal());
-        g.fillRoundRect(c.x, c.y, 8, c.height, 8, 8);
-        Iconos.marca(g, ok ? 2 : 3, c.x + 32, c.y + 28, 10);
-        g.setFont(Tema.fuente(Font.BOLD, 19));
-        g.drawString((ok ? "¡CORRECTO!" : "ERROR") + "   " + (r.puntos >= 0 ? "+" : "") + r.puntos + " pts"
-                + (r.dinero != 0 ? "   $" + r.dinero : ""), c.x + 52, c.y + 35);
-        Font f = Tema.fuente(Font.PLAIN, 12.5f);
-        g.setColor(Tema.tinta());
-        int y = c.y + 60;
-        List<String> lineas = new ArrayList<>();
-        lineas.add("Era: " + r.caso.verdad.etiqueta + ". " + r.efecto.explicacion);
-        if (r.caso.pub.getExplicacion() != null) {
-            lineas.add(r.caso.pub.getExplicacion());
-        }
-        if (r.alcance > 0) {
-            lineas.add("BFS: la publicación llegó a " + r.alcance + " cuentas del grafo social.");
-        }
-        if (r.corregidos > 0) {
-            lineas.add("Reporte: cuenta eliminada del grafo; " + r.corregidos + " personas corregidas.");
-        }
-        if (r.bonoRapidez) {
-            lineas.add("Bono por rapidez +30.");
-        }
-        if (r.seguroUsado) {
-            lineas.add("Tu seguro de reputación (tienda) anuló la advertencia de este error.");
-        }
-        if (j.jugador.rol == RolJugador.INFLUENCER) {
-            lineas.add("Influencer: tu decisión pesó x1,5 en puntos y en la ciudad.");
-        }
-        for (String l : lineas) {
-            y = Dibujo.parrafo(g, f, l, c.x + 22, y, c.width - 40, 17, c.y + c.height - 6);
-            y += 3;
         }
     }
 
@@ -2462,26 +2500,26 @@ public class OficinaVista extends Lienzo {
                 for (Herramienta h : Herramienta.values()) {
                     hs.append(hs.length() == 0 ? "" : ", ").append(h.nombre).append(rr.puedeUsar(h) ? "" : " (no)");
                 }
-                parrafoAyuda(g, "Herramientas del monitor: " + hs + ".", c, yy, ancho, yMax);
+                parrafoAyuda(g, "Apps de investigación del celular: " + hs + ".", c, yy, ancho, yMax);
                 break;
             case 2:
                 yy = paso(g, c, yy, 1, "Haz pasar al visitante", "Botón \"¡Siguiente!\" o Espacio. La fila es una cola: el primero en llegar pasa primero.", ancho);
-                yy = paso(g, c, yy, 2, "Pregúntale", "Arrastra una tarjeta de pregunta hacia el visitante (o haz clic, o teclas 1 a 5). Cada pregunta gasta 3 minutos.", ancho);
-                yy = paso(g, c, yy, 3, "Investiga", "Usa las herramientas del monitor que tenga tu rol. Si encuentras una contradicción aparece una pregunta naranja ¡CONFRONTAR!.", ancho);
+                yy = paso(g, c, yy, 2, "Pregúntale", "Las preguntas están en el cuadro de diálogo: arrástralas hacia el visitante (o clic, o teclas 1 a 6). Cada una gasta 3 minutos.", ancho);
+                yy = paso(g, c, yy, 3, "Investiga con el celular", "Ábrelo con P. Las herramientas son apps (Perfil, Directorio, Lupa, Imagen, Mapa, Red). Si encuentras una contradicción aparece una pregunta naranja ¡CONFRONTAR!.", ancho);
                 yy = paso(g, c, yy, 4, rr.tieneMiniJuego() ? "Usa tu habilidad" : "Envía al corresponsal", rr.tieneMiniJuego()
-                        ? "Pestaña \"Habilidad\" del monitor (tecla U): " + rr.habilidad + "." : "El corresponsal va al barrio por la ruta más corta (Dijkstra). Míralo en el MAPA.", ancho);
-                yy = paso(g, c, yy, 5, "Revisa la credencial", "Si el visitante trae carné aparece la BILLETERA en la ventana. Con la lupa señala la diferencia en la foto.", ancho);
-                paso(g, c, yy, 6, "Sella", "Toma un sello de la bandeja y ARRÁSTRALO sobre la publicación del celular. A las 18:00 se cierra la ventanilla.", ancho);
+                        ? "App \"Habilidad\" del celular o tecla U: " + rr.habilidad + "." : "App Mapa: el corresponsal va al barrio por la ruta más corta (Dijkstra) y te escribe al llegar.", ancho);
+                yy = paso(g, c, yy, 5, "Revisa la credencial", "Si el visitante trae carné aparece la billetera sobre el mostrador. Con la lupa señala la diferencia en la foto.", ancho);
+                paso(g, c, yy, 6, "Decide el sello", "Botón \"Decidir el sello\" (D). Caen círculos con todos los sellos: el primero que aciertas (Z X C V) elige tu sello y con 4 iguales se activa. Pisar otro sello cuesta una vida; dejar pasar no (margen de 10).", ancho);
                 break;
             case 3:
                 yy = icono(g, c, yy, "ayuda.png", "Ayuda (M o F1)", "Esta guía. Cambia según tu rol.", ancho);
-                yy = icono(g, c, yy, "estructura.png", "Estructuras (F2)", "Árboles, grafos y cola del juego en vivo. El reloj se detiene.", ancho);
-                yy = icono(g, c, yy, "mapa.png", "Mapa y ciudad (F3 o G)", "Los indicadores de Ciudad Nova, el grafo de barrios, el pánico y el corresponsal.", ancho);
-                yy = icono(g, c, yy, "billetera.png", "Tienda (S o F4)", "Gasta tu dinero en café, horas extra, pistas, seguros, mejoras y campañas.", ancho);
+                yy = icono(g, c, yy, "estructura.png", "Estructuras (F2)", "Árboles, grafos, tablas y cola del juego en vivo. El reloj se detiene.", ancho);
+                yy = icono(g, c, yy, "mapa.png", "Mapa y ciudad (F3 o G)", "Indicadores, barrios, pánico, corresponsal y la red de alerta.", ancho);
+                yy = icono(g, c, yy, "celular.png", "Celular (P o Tab)", "Sube solo con llamadas y avisos importantes. Apps, mensajes, noticias y tienda (S).", ancho);
                 yy = icono(g, c, yy, "pausa.png", "Pausa (Esc)", "Detiene el reloj. Accesibilidad y salir al menú.", ancho);
-                yy = icono(g, c, yy, "billetera.png", "Billetera (I)", "Solo aparece si el visitante trae credencial. La X roja en una herramienta = no aplica.", ancho);
-                yy = icono(g, c, yy, "verificarr.png", "Sellos (Z X C V B)", "Arrástralos sobre el celular: verificado, opinión, #publicidad, rechazar, reportar.", ancho);
-                parrafoAyuda(g, "Teclas: Espacio continuar · 1-5 preguntas · Q W E R T Y herramientas · U habilidad · K llamar · L lupa · X acusar en la lupa.",
+                yy = icono(g, c, yy, "billetera.png", "Credencial (I)", "Solo aparece si el visitante trae carné. Una X roja en una app = no aplica.", ancho);
+                yy = icono(g, c, yy, "verificarr.png", "Sellos (D o Z X C V)", "Pista de 4 carriles Z X C V: 4 círculos iguales activan el sello. Otro sello = −1 vida.", ancho);
+                parrafoAyuda(g, "Teclas: Espacio continuar · 1-6 preguntas · Q W E R T Y apps · U habilidad · K llamar · L lupa · X acusar en la lupa.",
                         c, yy + 4, ancho, yMax);
                 break;
             case 4:
@@ -2543,12 +2581,12 @@ public class OficinaVista extends Lienzo {
                 }
                 break;
             default:
-                yy = parrafoAyuda(g, "COLA (FIFO): la fila de la ventanilla.", c, yy, ancho, yMax);
-                yy = parrafoAyuda(g, "ÁRBOL N-ARIO de diálogo: cada pregunta es un nodo; al confrontar se INSERTAN nodos.", c, yy, ancho, yMax);
-                yy = parrafoAyuda(g, "ÁRBOL de consecuencias: raíz › sello › verdad. El día 2 se INSERTA la rama #PUBLICIDAD y el 5 se ELIMINA la rama OPINIÓN.", c, yy, ancho, yMax);
-                yy = parrafoAyuda(g, "AVL del directorio: búsqueda O(log n); se eliminan e insertan cuentas durante la semana.", c, yy, ancho, yMax);
-                yy = parrafoAyuda(g, "GRAFO de la ciudad: Dijkstra para el corresponsal y BFS para el pánico entre barrios.", c, yy, ancho, yMax);
-                yy = parrafoAyuda(g, "GRAFO social: BFS probabilístico al publicar, DFS para anillos de bots, eliminar vértice al reportar.", c, yy, ancho, yMax);
+                yy = parrafoAyuda(g, "COLAS (FIFO): la fila de la ventanilla, las notificaciones del celular y las notas de la pista de sellos.", c, yy, ancho, yMax);
+                yy = parrafoAyuda(g, "ÁRBOLES: diálogo n-ario (se INSERTAN confrontaciones), consecuencias (rama #PUBLICIDAD insertada y OPINIÓN eliminada), AVL del directorio y ABB de los contactos (recorridos recursivos e iterativos).", c, yy, ancho, yMax);
+                yy = parrafoAyuda(g, "TABLAS HASH: mensajes del celular (contacto › chat) y publicaciones de la historia (id › publicación).", c, yy, ancho, yMax);
+                yy = parrafoAyuda(g, "GRAFO DE LA CIUDAD: Dijkstra (corresponsal), BFS (pánico), Floyd-Warshall (minutos a cada barrio y estudio del noticiero), Kruskal (red de alerta), Prim (cobertura del noticiero) y Ford-Fulkerson (votantes por hora el día de elecciones).", c, yy, ancho, yMax);
+                yy = parrafoAyuda(g, "GRAFO SOCIAL: BFS al publicar, DFS para anillos de bots, Bellman-Ford para cámaras de eco y eliminar vértice al reportar.", c, yy, ancho, yMax);
+                yy = parrafoAyuda(g, "ORDENAMIENTOS: inserción (titulares), shell (tendencias), heap (notas de la pista), quick (ranking) y burbuja (marcador en red).", c, yy, ancho, yMax);
                 parrafoAyuda(g, "Tu rol: " + estructuraRol(rr), c, yy, ancho, yMax);
                 break;
         }
@@ -2598,7 +2636,7 @@ public class OficinaVista extends Lienzo {
                         + "acaben los 10 segundos. Atacar o repetir rumores sube los conflictos y la desinformación. "
                         + "Lo responsable suma confianza y votos para la elección.";
             default:
-                return "Cómo jugarla: eres quien tiene todo el monitor. El corresponsal, el escáner de red y las llamadas "
+                return "Cómo jugarla: tienes todas las apps del celular. El corresponsal, el escáner de red y las llamadas "
                         + "a las instituciones son solo tuyos. Confronta al visitante con lo que encuentres.";
         }
     }
@@ -2663,10 +2701,20 @@ public class OficinaVista extends Lienzo {
         }
         info.add("HABILIDAD (" + rr.habilidad + "): usada " + j.jugador.habilidadesUsadas + " veces, bien "
                 + j.jugador.habilidadesBien + ". " + (rr.tieneMiniJuego() ? estructuraRol(rr) : "Tienes todas las herramientas."));
+        Telefono tel = j.jugador.telefono;
+        List<String> agenda = tel.getAgenda().inordenIterativo();
+        info.add("ABB DE CONTACTOS: " + agenda.size() + " nodos, altura " + tel.getAgenda().altura() + ". Inorden: "
+                + agenda.get(0) + ", " + agenda.get(1) + ", " + agenda.get(2) + "...");
+        info.add("TABLA HASH DE MENSAJES: " + tel.getChats().tamano() + " chats en " + tel.getChats().cantidadCubetas()
+                + " cubetas (carga " + String.format("%.2f", tel.getChats().factorCarga()) + ").");
+        info.add("FLOYD-WARSHALL: estudio en " + CiudadEstado.ZONAS[ci.estudio] + " (centro del grafo). KRUSKAL: red de alerta de "
+                + GrafoCiudad.pesoTotal(ci.redAlerta) + " m = PRIM " + GrafoCiudad.pesoTotal(ci.coberturaNoticiero) + " m.");
+        info.add("FORD-FULKERSON: " + ci.flujoVotantes() + " votantes por hora llegarían hoy a las urnas (de "
+                + ci.flujoVotantesIdeal() + " sin pánico).");
         g.setColor(Tema.texto());
-        int y = d.y + 62;
+        int y = d.y + 54;
         for (String s : info) {
-            y = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13), s, d.x + 18, y, d.width - 36, 19, d.y + d.height - 8) + 6;
+            y = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 12), s, d.x + 18, y, d.width - 36, 16, d.y + d.height - 8) + 4;
         }
         g.setFont(Tema.fuente(Font.PLAIN, 11.5f));
         g.setColor(Tema.textoSuave());
@@ -2761,24 +2809,36 @@ public class OficinaVista extends Lienzo {
         g.setStroke(new BasicStroke(1));
         g.setColor(Tema.texto());
         g.drawString("Ruta del corresponsal (Dijkstra)", ley.x + 38, y);
+        y += 24;
+        g.setColor(new Color(150, 200, 120));
+        g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[]{5, 5}, 0));
+        g.drawLine(ley.x + 18, y - 5, ley.x + 32, y - 5);
+        g.setStroke(new BasicStroke(1));
+        g.setColor(Tema.texto());
+        g.drawString("Red de alerta (Kruskal)", ley.x + 38, y);
         y += 36;
         g.setColor(Tema.textoSuave());
         String txt;
         if (rol().puedeUsar(Herramienta.CORRESPONSAL)) {
             txt = j.corresponsalEnCamino() ? "El corresponsal va en camino: mira la moto avanzar por la ruta más corta."
-                    : "Envía el corresponsal desde el monitor (tecla T). Más lejos = más minutos.";
+                    : "Envía el corresponsal desde la app Mapa del celular (tecla T). Más lejos = más minutos.";
         } else {
             txt = "El corresponsal es del periodista. Aquí ves cómo el pánico salta de barrio en barrio (BFS) cuando "
                     + "se publica un bulo.";
         }
         y = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13), txt, ley.x + 18, y, ley.width - 36, 19, ley.y + ley.height - 10);
+        y += 10;
+        y = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 13), "Cuando aciertas sobre un barrio, la calma viaja por la red de "
+                + "alerta: los barrios conectados a él por ese árbol también se calman.", ley.x + 18, y, ley.width - 36, 19,
+                ley.y + ley.height - 10);
         y += 14;
         g.setColor(Tema.texto());
         Dibujo.parrafo(g, Tema.fuente(Font.ITALIC, 12.5f), "Vértices = lugares. Aristas = calles con su distancia. "
                 + "El reloj sigue corriendo mientras miras el mapa.", ley.x + 18, y, ley.width - 36, 18, ley.y + ley.height - 10);
     }
 
-    private void mapa(Graphics2D g, Rectangle r) {
+    /** El grafo de la ciudad (lo usan el panel MAPA y la app Mapa del celular). */
+    void mapa(Graphics2D g, Rectangle r) {
         g.setColor(Tema.altoContraste ? Color.BLACK : new Color(34, 18, 14));
         g.fillRoundRect(r.x, r.y, r.width, r.height, 16, 16);
         if (!Tema.altoContraste) {
@@ -2792,6 +2852,13 @@ public class OficinaVista extends Lienzo {
         g.setStroke(new BasicStroke(5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         g.setColor(Tema.altoContraste ? Color.GRAY : new Color(140, 88, 64, 160));
         for (int[] calle : c.mapa.calles()) {
+            GrafoCiudad.Zona a = c.mapa.zona(calle[0]), b = c.mapa.zona(calle[1]);
+            g.drawLine((int) (cx + a.x * esc), (int) (cy + a.z * esc), (int) (cx + b.x * esc), (int) (cy + b.z * esc));
+        }
+        // red de alerta temprana: arbol de expansion minima (Kruskal), en linea punteada
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(150, 200, 120, 200));
+        g.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 1, new float[]{7, 7}, 0));
+        for (int[] calle : c.redAlerta) {
             GrafoCiudad.Zona a = c.mapa.zona(calle[0]), b = c.mapa.zona(calle[1]);
             g.drawLine((int) (cx + a.x * esc), (int) (cy + a.z * esc), (int) (cx + b.x * esc), (int) (cy + b.z * esc));
         }
@@ -2877,6 +2944,37 @@ public class OficinaVista extends Lienzo {
         Dibujo.parrafo(g, Tema.fuente(Font.ITALIC, 14), jv.rol.mision, r.x + 90, r.y + 280, r.width - 180, 20, r.y + 320);
         boton(g, new Rectangle(r.x + r.width / 2 - 160, r.y + r.height - 86, 320, 58), "Empezar  (Espacio)",
                 Dibujo.Estilo.PRINCIPAL, this::empezarLlamada);
+    }
+
+    /** Partida en red: el servidor todavia no da el siguiente turno. */
+    private void tarjetaEspera(Graphics2D g) {
+        velo(g);
+        Rectangle r = new Rectangle(W / 2 - 330, 230, 660, 330);
+        Dibujo.tarjetaPapel(g, r, 30);
+        double a = t * 3;
+        for (int i = 0; i < 8; i++) {
+            double ang = a + i * Math.PI / 4;
+            g.setColor(Tema.alfa(Tema.COBRE, 40 + i * 25));
+            g.fill(new Ellipse2D.Double(r.getCenterX() + Math.cos(ang) * 30 - 6, r.y + 80 + Math.sin(ang) * 30 - 6, 12, 12));
+        }
+        g.setFont(Tema.fuente(Font.BOLD, 26));
+        g.setColor(Tema.tinta());
+        Dibujo.centrado(g, "Esperando a los demás verificadores", r.getCenterX(), r.y + 160);
+        g.setFont(Tema.fuente(Font.PLAIN, 15));
+        g.setColor(Tema.tintaSuave());
+        Dibujo.centrado(g, "El servidor reparte los turnos: el día " + (j.dia + 1) + " empieza cuando todos terminen el " + j.dia + ".",
+                r.getCenterX(), r.y + 194);
+        if (!faltanRed.isEmpty()) {
+            g.setFont(Tema.fuente(Font.BOLD, 15));
+            g.setColor(Tema.acento());
+            Dibujo.centrado(g, "Faltan: " + String.join(", ", faltanRed), r.getCenterX(), r.y + 236);
+        }
+        if (!marcadorRed.isEmpty()) {
+            g.setFont(Tema.fuente(Font.PLAIN, 13));
+            g.setColor(Tema.tintaSuave());
+            Dibujo.centrado(g, Dibujo.recortar(g.getFontMetrics(), "Marcador: " + String.join("  ·  ", marcadorRed), r.width - 60),
+                    r.getCenterX(), r.y + 280);
+        }
     }
 
     private void finDia(Graphics2D g) {
@@ -2966,7 +3064,7 @@ public class OficinaVista extends Lienzo {
         for (String x : l) {
             ancho = Math.max(ancho, g.getFontMetrics().stringWidth(x));
         }
-        Rectangle r = new Rectangle(W / 2 - (ancho + 76) / 2, (int) (BARRA + 12 + baja), ancho + 76, 22 + l.size() * 21);
+        Rectangle r = new Rectangle(W / 2 - (ancho + 76) / 2, (int) (BARRA + 36 + baja), ancho + 76, 22 + l.size() * 21);
         Composite antes = g.getComposite();
         g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) Math.max(0, Math.min(1, alfa))));
         Dibujo.sombra(g, new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 20, 20), 5, 4);
@@ -2991,51 +3089,6 @@ public class OficinaVista extends Lienzo {
         g.setComposite(antes);
     }
 
-    // ------------------------------------------------------------ TIENDA
-    /** Boton redondo de la tienda (mismo estilo que los botones con imagen: circulo rosa con borde cafe). */
-    private void botonTienda(Graphics2D g, Rectangle r) {
-        boolean hv = encima(r), activoP = panel == Panel.TIENDA;
-        double k = hv ? 1.08 : 1.0;
-        double w = r.width * k, x = r.getCenterX() - w / 2, y = r.getCenterY() - w / 2;
-        if ((hv || activoP) && !Tema.altoContraste) {
-            g.setColor(Tema.alfa(Tema.DORADO, activoP ? 120 : 90));
-            g.fill(new Ellipse2D.Double(x - 4, y - 4, w + 8, w + 8));
-        }
-        g.setColor(Tema.altoContraste ? Color.BLACK : new Color(96, 46, 36));
-        g.fill(new Ellipse2D.Double(x, y, w, w));
-        g.setPaint(new GradientPaint((float) x, (float) y, Tema.altoContraste ? Color.BLACK : new Color(246, 228, 222),
-                (float) x, (float) (y + w), Tema.altoContraste ? Color.BLACK : new Color(214, 176, 166)));
-        g.fill(new Ellipse2D.Double(x + w * 0.09, y + w * 0.09, w * 0.82, w * 0.82));
-        // bolsa de compras
-        double cx = r.getCenterX(), cy = r.getCenterY() + 2, s = w / 50.0;
-        Color cafe = Tema.altoContraste ? Color.YELLOW : new Color(96, 46, 36);
-        g.setColor(Tema.altoContraste ? Color.BLACK : Tema.COBRE);
-        g.fill(new RoundRectangle2D.Double(cx - 11 * s, cy - 7 * s, 22 * s, 18 * s, 5 * s, 5 * s));
-        g.setColor(cafe);
-        g.setStroke(new BasicStroke((float) (2.4 * s), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        g.draw(new RoundRectangle2D.Double(cx - 11 * s, cy - 7 * s, 22 * s, 18 * s, 5 * s, 5 * s));
-        g.draw(new java.awt.geom.Arc2D.Double(cx - 6 * s, cy - 14 * s, 12 * s, 14 * s, 0, 180, java.awt.geom.Arc2D.OPEN));
-        g.setStroke(new BasicStroke(1));
-        g.setFont(Tema.fuente(Font.BOLD, (float) (9 * s)));
-        g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.CREMA);
-        Dibujo.centrado(g, "$", cx, cy + 6 * s);
-        if (hv) {
-            String et = "Tienda (S)";
-            g.setFont(Tema.fuente(Font.BOLD, 12));
-            int tw = g.getFontMetrics().stringWidth(et) + 16;
-            int tx = (int) (r.getCenterX() - tw / 2.0), ty = r.y + r.height + 6;
-            g.setColor(Tema.altoContraste ? Color.BLACK : new Color(42, 23, 18, 235));
-            g.fillRoundRect(tx, ty, tw, 22, 11, 11);
-            g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.CREMA);
-            g.drawString(et, tx + 8, ty + 16);
-        }
-        zona(r, () -> {
-            panel = panel == Panel.TIENDA ? Panel.NADA : Panel.TIENDA;
-            arrastraSello = null;
-            arrastraPregunta = null;
-        });
-    }
-
     private void comprar(Tienda.Articulo a) {
         String m = Tienda.comprar(a, j);
         if (m.startsWith("[x] ")) {
@@ -3048,7 +3101,7 @@ public class OficinaVista extends Lienzo {
         tiendaT = t;
         Sonido.tocar(Sonido.Tipo.LOGRO);
         if (a == Tienda.Articulo.INFORMANTE) {
-            avisos.agregar("Pista del informante", m, Tema.acento2(), 0);
+            j.jugador.telefono.recibir(Telefono.INFORMANTE, Iconos.sinPrefijo(m), j.hora(), true);
         }
     }
 
@@ -3187,21 +3240,12 @@ public class OficinaVista extends Lienzo {
         }
     }
 
+
     // ------------------------------------------------------------ utilidades
     private void centrado(Graphics2D g, String s, Rectangle r, Color c, int dy) {
         g.setFont(Tema.fuente(Font.BOLD, 15));
         g.setColor(c);
         Dibujo.centrado(g, s, r.getCenterX(), r.getCenterY() + dy);
-    }
-
-    /** Utilidad de color (se conserva por compatibilidad). */
-    static final class Escala {
-        private Escala() {
-        }
-
-        static Color mezclar(Color a, Color b, double k) {
-            return Tema.mezclar(a, b, k);
-        }
     }
 
     // ------------------------------------------------------------ para las pruebas
@@ -3214,7 +3258,7 @@ public class OficinaVista extends Lienzo {
         return j;
     }
 
-    /** NADA, LUPA, BILLETERA, AYUDA (o MANUAL), ESTRUCTURAS, PAUSA, MAPA, HABILIDAD, VIRAL. */
+    /** NADA, LUPA, BILLETERA, AYUDA (o MANUAL), ESTRUCTURAS, PAUSA, MAPA, TIENDA, HABILIDAD, VIRAL, SELLOS, CELULAR. */
     public void forzarCapa(String nombre) {
         switch (nombre) {
             case "LUPA": abrirLupa(); break;
@@ -3226,6 +3270,8 @@ public class OficinaVista extends Lienzo {
             case "MAPA": panel = Panel.MAPA; break;
             case "TIENDA": panel = Panel.TIENDA; break;
             case "HABILIDAD": usarHabilidad(); break;
+            case "SELLOS": decidir(); break;
+            case "CELULAR": cel.abrir(); break;
             case "VIRAL":
                 mini = new MiniJuegos.Viral(this, Habilidades.viral(new Random()));
                 juego = Juego.MINIJUEGO;
@@ -3237,10 +3283,20 @@ public class OficinaVista extends Lienzo {
         }
     }
 
-    /** Para las capturas: pagina de la ayuda y pestana del monitor. */
-    public void forzarVista(int paginaAyuda, int pestana) {
+    /** Para las capturas: pagina de la ayuda y app del celular (0..5 herramientas, 6 habilidad, 7 mensajes, 8 noticias). */
+    public void forzarVista(int paginaAyuda, int app) {
         this.paginaAyuda = paginaAyuda;
-        this.tab = pestana;
+        if (app >= 0 && app < Herramienta.values().length) {
+            cel.abrir(CelularVista.App.de(Herramienta.values()[app]));
+        } else if (app == 6) {
+            cel.abrir(CelularVista.App.HABILIDAD);
+        } else if (app == 7) {
+            cel.abrir(CelularVista.App.MENSAJES);
+        } else if (app == 8) {
+            cel.abrir(CelularVista.App.NOTICIAS);
+        } else if (app == 9) {
+            cel.abrir(CelularVista.App.TELEFONO);
+        }
     }
 
     /** Para las capturas: el mini-juego activo (o null). */
