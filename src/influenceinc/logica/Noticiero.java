@@ -217,7 +217,7 @@ public final class Noticiero {
                     PRESENTADORA, -1, "titular"));
         }
         CiudadEstado c = jv.ciudad;
-        StringBuilder sb = new StringBuilder("Termómetro de Civitas: la desinformación quedó en " + c.desinformacion()
+        StringBuilder sb = new StringBuilder("Balance de Civitas: la desinformación quedó en " + c.desinformacion()
                 + " % y la confianza en " + c.confianza + ".");
         int conPanico = 0;
         for (int z = 2; z < c.panico.length; z++) {

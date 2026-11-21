@@ -4,8 +4,10 @@ import influenceinc.logica.Caso;
 import influenceinc.logica.CiudadEstado;
 import influenceinc.logica.Historia;
 import influenceinc.logica.Jornada;
+import influenceinc.logica.JugadorVerificador;
 import influenceinc.logica.Noticiero;
 import influenceinc.logica.Telefono;
+import influenceinc.logica.Tienda;
 import influenceinc.modelo.Cuenta;
 import influenceinc.modelo.Herramienta;
 import influenceinc.modelo.Publicacion;
@@ -82,6 +84,10 @@ final class CelularVista {
     private double avisoLadoT = -10;
     private boolean llamada;
     private double llamadaT;
+    // llamada a un contacto de la agenda (pantalla propia, no la de Don Ramiro)
+    private String contacto, respuesta;
+    private boolean contactoOk;
+    private double contactoT;
 
     CelularVista(OficinaVista v) {
         this.v = v;
@@ -132,6 +138,21 @@ final class CelularVista {
         return app;
     }
 
+    /** Muestra la pantalla de llamada con un contacto y lo que contesto. */
+    void mostrarLlamada(String nombre, String texto, boolean ok) {
+        contacto = nombre;
+        respuesta = texto;
+        contactoOk = ok;
+        contactoT = 0;
+        abierto = true;
+    }
+
+    private void colgarContacto() {
+        contacto = null;
+        Sonido.tocar(Sonido.Tipo.CLIC);
+        abrir(App.TELEFONO);
+    }
+
     void modoLlamada(boolean si) {
         if (si && !llamada) {
             llamadaT = 0;
@@ -150,6 +171,9 @@ final class CelularVista {
         }
         if (llamada) {
             llamadaT += dt;
+        }
+        if (contacto != null) {
+            contactoT += dt;
         }
         // las notificaciones salen de la cola del telefono una por una
         if (v.jornada() != null && v.t - bannerT > 3.6 && v.t - avisoLadoT > 3.6) {
@@ -240,6 +264,9 @@ final class CelularVista {
         if (llamada) {
             pantallaLlamada(s, p, j);
             oscuro = true;
+        } else if (contacto != null) {
+            pantallaContacto(s, p);
+            oscuro = true;
         } else if (app == null) {
             inicio(s, p, j);
             oscuro = true;
@@ -255,7 +282,7 @@ final class CelularVista {
         s.setColor(oscuro ? new Color(255, 255, 255, 200) : new Color(30, 24, 26, 200));
         s.fill(new RoundRectangle2D.Double(p.getCenterX() - 62, p.y + p.height - 13, 124, 5, 5, 5));
         s.dispose();
-        if (!llamada) {
+        if (!llamada && contacto == null) {
             v.zona(new Rectangle(p.x + 60, p.y + p.height - 26, p.width - 120, 26), this::inicio);
         }
         // isla de la camara
@@ -441,39 +468,12 @@ final class CelularVista {
         g.setFont(Tema.fuente(Font.PLAIN, 14));
         g.setColor(new Color(255, 255, 255, 220));
         Dibujo.centrado(g, "Día " + j.dia + " de " + Historia.DIAS + "  ·  " + Historia.TITULOS[j.dia], p.getCenterX(), p.y + 70);
-        // widget de la ciudad: los 6 indicadores, siempre al dia
-        Rectangle w = new Rectangle(p.x + 18, p.y + 150, p.width - 36, 112);
-        g.setColor(new Color(255, 255, 255, 46));
-        g.fillRoundRect(w.x, w.y, w.width, w.height, 22, 22);
-        CiudadEstado c = j.jugador.ciudad;
-        g.setFont(Tema.fuente(Font.BOLD, 11.5f));
-        g.setColor(new Color(255, 255, 255, 230));
-        g.drawString("CIUDAD NOVA  ·  salud " + c.salud(), w.x + 14, w.y + 21);
-        String[] et = {"Verificada", "Confianza", "Convivencia", "Bienestar", "Desinform.", "Conflictos"};
-        int[] va = {c.verificada, c.confianza, c.convivencia, c.bienestar, c.desinformacion(), c.conflictos};
-        int cw = (w.width - 28) / 3;
-        for (int i = 0; i < 6; i++) {
-            int x = w.x + 14 + (i % 3) * cw, y = w.y + 42 + (i / 3) * 36;
-            boolean malo = i >= 4;
-            boolean bien = malo ? va[i] < 35 : va[i] >= 50;
-            g.setFont(Tema.fuente(Font.PLAIN, 10));
-            g.setColor(new Color(255, 255, 255, 200));
-            g.drawString(et[i], x, y);
-            g.setFont(Tema.fuente(Font.BOLD, 10.5f));
-            g.setColor(Color.WHITE);
-            String vs = va[i] + (i == 4 ? "%" : "");
-            g.drawString(vs, x + cw - 10 - g.getFontMetrics().stringWidth(vs), y);
-            g.setColor(new Color(0, 0, 0, 60));
-            g.fillRoundRect(x, y + 6, cw - 10, 6, 6, 6);
-            g.setColor(bien ? Tema.mezclar(Tema.SALVIA, Color.WHITE, 0.25) : Tema.mezclar(Tema.LADRILLO, Color.WHITE, 0.2));
-            g.fillRoundRect(x, y + 6, (cw - 10) * Math.max(0, Math.min(100, va[i])) / 100, 6, 6, 6);
-        }
         // grilla de apps
         int cols = 4, tam = 58;
         int gx = (p.width - cols * tam) / (cols + 1);
         for (int i = 0; i < GRILLA.length; i++) {
             App a = GRILLA[i];
-            int x = p.x + gx + (i % cols) * (tam + gx), y = p.y + 286 + (i / cols) * 96;
+            int x = p.x + gx + (i % cols) * (tam + gx), y = p.y + 176 + (i / cols) * 100;
             botonApp(g, a, x, y, tam, j, true);
         }
         // dock
@@ -572,10 +572,6 @@ final class CelularVista {
     private void tocarApp(App a) {
         Sonido.tocar(Sonido.Tipo.CLIC);
         Jornada j = v.jornada();
-        if (a == App.TIENDA) {
-            v.abrirTienda();
-            return;
-        }
         if (a.herramienta != null && (!j.delRol(a.herramienta) || a.herramienta.dia > j.dia)) {
             v.alertaRoja(j.motivoNoAplica(a.herramienta));
             return;
@@ -752,9 +748,140 @@ final class CelularVista {
         v.zona(col, v::colgar);
     }
 
+    /** Pantalla de llamada con un contacto de la agenda. */
+    private void pantallaContacto(Graphics2D g, Rectangle p) {
+        Color arriba = contactoOk ? new Color(58, 84, 60) : new Color(92, 46, 42);
+        g.setPaint(new GradientPaint(p.x, p.y, arriba, p.x, p.y + p.height, new Color(30, 20, 24)));
+        g.fill(p);
+        double cx = p.getCenterX();
+        boolean marcando = contactoT < 1.2;
+        g.setFont(Tema.fuente(Font.PLAIN, 13));
+        g.setColor(new Color(255, 255, 255, 170));
+        int seg = (int) Math.max(0, contactoT - 1.2);
+        Dibujo.centrado(g, marcando ? "Llamando..." : String.format("En llamada  %02d:%02d", seg / 60, seg % 60), cx, p.y + 88);
+        double r = 56, cy = p.y + 172;
+        double pulso = 1 + 0.06 * Math.sin(v.t * (marcando ? 8 : 3));
+        g.setColor(new Color(255, 255, 255, 30));
+        g.fill(new Ellipse2D.Double(cx - r * 1.25 * pulso, cy - r * 1.25 * pulso, r * 2.5 * pulso, r * 2.5 * pulso));
+        avatar(g, contacto, cx, cy, r);
+        g.setFont(Dibujo.ajustar(g, contacto, Font.BOLD, 22, p.width - 40));
+        g.setColor(Color.WHITE);
+        Dibujo.centrado(g, contacto, cx, cy + r + 42);
+        if (!marcando) {
+            // lo que contesto, en una burbuja
+            Font f = Tema.fuente(Font.PLAIN, 13);
+            List<String> l = Avisos.partir(g, f, respuesta, p.width - 76);
+            int alto = Math.min(9, l.size()) * 18 + 44;
+            Rectangle b = new Rectangle(p.x + 22, (int) (cy + r + 66), p.width - 44, alto);
+            g.setColor(new Color(255, 255, 255, 235));
+            g.fillRoundRect(b.x, b.y, b.width, b.height, 20, 20);
+            g.setFont(Tema.fuente(Font.BOLD, 11));
+            g.setColor(contactoOk ? new Color(66, 124, 58) : new Color(176, 58, 50));
+            g.drawString(contactoOk ? "LLAMADA ÚTIL PARA EL CASO" : "NO APLICA  ·  −" + JugadorVerificador.COSTO_LLAMADA_MALA
+                    + " DE VIDA", b.x + 16, b.y + 22);
+            g.setColor(new Color(40, 30, 28));
+            Dibujo.parrafo(g, f, respuesta, b.x + 16, b.y + 42, b.width - 32, 18, b.y + b.height - 4);
+        }
+        Rectangle col = new Rectangle((int) cx - 34, p.y + p.height - 116, 68, 68);
+        boolean hv = v.encima(col);
+        g.setColor(hv ? new Color(232, 88, 74) : new Color(214, 66, 54));
+        g.fill(new Ellipse2D.Double(col.x, col.y, col.width, col.height));
+        Graphics2D a = (Graphics2D) g.create();
+        a.rotate(Math.toRadians(135), col.getCenterX(), col.getCenterY());
+        a.setColor(Color.WHITE);
+        auricular(a, col.getCenterX(), col.getCenterY(), 14);
+        a.dispose();
+        v.zona(col, this::colgarContacto);
+    }
+
     // ==================================================================
     // Apps
     // ==================================================================
+
+    // ------------------------------------------------------------------ Tienda
+    /** Tienda dentro del celular: saldo arriba y una tarjeta por articulo. */
+    private int tienda(Graphics2D g, Rectangle c, int y, Jornada j) {
+        JugadorVerificador jv = j.jugador;
+        Rectangle sal = new Rectangle(c.x, y, c.width, 84);
+        g.setPaint(new GradientPaint(sal.x, sal.y, new Color(196, 140, 60), sal.x + sal.width, sal.y + sal.height,
+                new Color(150, 84, 46)));
+        g.fillRoundRect(sal.x, sal.y, sal.width, sal.height, 20, 20);
+        g.setColor(new Color(255, 255, 255, 40));
+        g.fill(new Ellipse2D.Double(sal.x + sal.width - 90, sal.y - 30, 130, 130));
+        g.setFont(Tema.fuente(Font.PLAIN, 12));
+        g.setColor(new Color(255, 255, 255, 220));
+        g.drawString("Tu saldo", sal.x + 18, sal.y + 26);
+        g.setFont(Tema.fuente(Font.BOLD, 30));
+        g.setColor(Color.WHITE);
+        g.drawString("$" + jv.dinero, sal.x + 18, sal.y + 62);
+        g.setFont(Tema.fuente(Font.PLAIN, 11));
+        g.setColor(new Color(255, 255, 255, 210));
+        String vida = "Vida " + jv.vida + "/" + JugadorVerificador.VIDA_MAX;
+        g.drawString(vida, sal.x + sal.width - 18 - g.getFontMetrics().stringWidth(vida), sal.y + 62);
+        y += 98;
+        String msg = v.mensajeTienda();
+        if (msg != null) {
+            Font f = Tema.fuente(Font.PLAIN, 12);
+            List<String> l = Avisos.partir(g, f, msg, c.width - 40);
+            int alto = l.size() * 16 + 16;
+            g.setColor(new Color(104, 160, 84, 40));
+            g.fillRoundRect(c.x, y, c.width, alto, 14, 14);
+            Iconos.marca(g, 2, c.x + 14, y + 14, 6);
+            g.setColor(new Color(50, 96, 44));
+            Dibujo.parrafo(g, f, msg, c.x + 28, y + 19, c.width - 40, 16, Integer.MAX_VALUE);
+            y += alto + 10;
+        }
+        String tipo = null;
+        for (Tienda.Articulo a : Tienda.Articulo.values()) {
+            if (!a.tipo.equals(tipo)) {
+                tipo = a.tipo;
+                g.setFont(Tema.fuente(Font.BOLD, 11));
+                g.setColor(new Color(150, 84, 46));
+                g.drawString(tipo.toUpperCase(), c.x + 2, y + 12);
+                y += 20;
+            }
+            String no = Tienda.motivoNoCompra(a, j);
+            Font fd = Tema.fuente(Font.PLAIN, 11);
+            List<String> l = Avisos.partir(g, fd, a.descripcion, c.width - 76);
+            int alto = Math.max(70, 40 + l.size() * 15);
+            Rectangle t = new Rectangle(c.x, y, c.width, alto);
+            g.setColor(Color.WHITE);
+            g.fillRoundRect(t.x, t.y, t.width, t.height, 18, 18);
+            g.setColor(new Color(0, 0, 0, 18));
+            g.drawRoundRect(t.x, t.y, t.width, t.height, 18, 18);
+            // icono
+            g.setColor(no == null ? new Color(196, 140, 60) : new Color(190, 176, 170));
+            g.fillRoundRect(t.x + 10, t.y + 12, 44, 44, 14, 14);
+            OficinaVista.iconoArticulo(g, a, t.x + 32, t.y + 34, 18);
+            g.setFont(Dibujo.ajustar(g, a.nombre, Font.BOLD, 13, c.width - 150));
+            g.setColor(new Color(30, 24, 26));
+            g.drawString(a.nombre, t.x + 64, t.y + 24);
+            g.setColor(new Color(120, 100, 94));
+            Dibujo.parrafo(g, fd, a.descripcion, t.x + 64, t.y + 42, c.width - 76, 15, t.y + t.height - 4);
+            // pastilla de precio / comprar
+            Rectangle pr = new Rectangle(t.x + t.width - 78, t.y + 9, 68, 24);
+            boolean hv = no == null && v.encima(pr);
+            g.setColor(no == null ? (hv ? new Color(84, 140, 70) : new Color(104, 160, 84)) : new Color(226, 216, 212));
+            g.fillRoundRect(pr.x, pr.y, pr.width, pr.height, 24, 24);
+            g.setFont(Tema.fuente(Font.BOLD, 12));
+            g.setColor(no == null ? Color.WHITE : new Color(140, 120, 114));
+            Dibujo.centrado(g, "$" + a.precio, pr.getCenterX(), pr.y + 17);
+            final Tienda.Articulo art = a;
+            final String motivo = no;
+            zonaVisible(t, c, () -> {
+                if (motivo == null) {
+                    v.comprar(art);
+                } else {
+                    v.alertaRoja(motivo);
+                }
+            });
+            y += alto + 8;
+        }
+        g.setFont(Tema.fuente(Font.PLAIN, 10.5f));
+        g.setColor(new Color(150, 130, 124));
+        g.drawString("Toca un artículo para comprarlo (tecla S abre la tienda).", c.x, y + 10);
+        return y + 20;
+    }
 
     private void contenidoApp(Graphics2D g, Rectangle p, Jornada j) {
         // encabezado: volver + nombre de la app
@@ -793,6 +920,7 @@ final class CelularVista {
             case TELEFONO: yFin = telefono(s, c, y0, j); break;
             case NOTICIAS: yFin = noticias(s, c, y0, j); break;
             case HABILIDAD: yFin = habilidad(s, c, y0, j); break;
+            case TIENDA: yFin = tienda(s, c, y0, j); break;
             default: yFin = herramienta(s, c, y0, j, app.herramienta); break;
         }
         s.dispose();
@@ -860,7 +988,7 @@ final class CelularVista {
         y += 18;
         g.setFont(Tema.fuente(Font.BOLD, 13));
         g.setColor(new Color(48, 36, 34));
-        g.drawString("Tendencias en Ciudad Nova", c.x, y);
+        g.drawString("Tendencias", c.x, y);
         y += 10;
         List<String[]> ten = Noticiero.tendencias(j.dia, v.semilla(), Math.max(0, j.avanceDia()));
         for (int i = 0; i < ten.size() && i < 3; i++) {
@@ -1166,13 +1294,26 @@ final class CelularVista {
                 g.drawString(String.valueOf(letra), c.x, y + 12);
                 y += 18;
             }
+            Rectangle fila = new Rectangle(c.x - 4, y + 2, c.width + 8, 42);
+            if (v.encima(fila) && fila.intersects(c)) {
+                g.setColor(new Color(122, 92, 153, 22));
+                g.fillRoundRect(fila.x, fila.y, fila.width, fila.height, 14, 14);
+            }
             avatar(g, k.nombre, c.x + 18, y + 22, 16);
             g.setFont(Tema.fuente(Font.BOLD, 13));
             g.setColor(new Color(30, 24, 26));
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), k.nombre, c.width - 50), c.x + 44, y + 19);
+            g.drawString(Dibujo.recortar(g.getFontMetrics(), k.nombre, c.width - 84), c.x + 44, y + 19);
             g.setFont(Tema.fuente(Font.PLAIN, 11));
             g.setColor(new Color(130, 110, 104));
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), k.detalle + "  ·  " + k.numero, c.width - 50), c.x + 44, y + 35);
+            g.drawString(Dibujo.recortar(g.getFontMetrics(), k.detalle + "  ·  " + k.numero, c.width - 84), c.x + 44, y + 35);
+            // boton verde de llamar
+            double bx = c.x + c.width - 18, by = y + 22;
+            g.setColor(new Color(104, 160, 84));
+            g.fill(new Ellipse2D.Double(bx - 15, by - 15, 30, 30));
+            g.setColor(Color.WHITE);
+            auricular(g, bx, by, 7);
+            final String quien = k.nombre;
+            zonaVisible(fila, c, () -> v.llamarContacto(quien));
             y += 46;
         }
         y += 14;
@@ -1180,7 +1321,8 @@ final class CelularVista {
         g.setColor(new Color(150, 130, 124));
         g.drawString("Agenda en un ABB: " + tel.getAgenda().getTamano() + " contactos, altura " + tel.getAgenda().altura()
                 + ", inorden = orden alfabético.", c.x, y);
-        return y + 12;
+        g.drawString("Llamar a quien no tiene que ver con el caso: −5 de vida.", c.x, y + 15);
+        return y + 27;
     }
 
     // ------------------------------------------------------------------ Noticias

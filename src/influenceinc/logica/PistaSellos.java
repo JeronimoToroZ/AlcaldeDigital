@@ -30,7 +30,7 @@ import java.util.Random;
 public class PistaSellos {
 
     /** Velocidad de caida pedida para el minijuego. */
-    public static final double VELOCIDAD = 1.1;
+    public static final double VELOCIDAD = 1.0;
     /** Pixeles del lienzo por segundo cuando la velocidad es 1. */
     public static final double PIXELES_POR_SEGUNDO = 200;
     public static final int CARRILES = 4;

@@ -27,7 +27,8 @@ import java.awt.geom.RoundRectangle2D;
 final class JuegoSellos extends MiniJuego {
 
     /** Un color de la paleta para cada carril (anillo del receptor). */
-    private static final Color[] COLOR_CARRIL = {Tema.COBRE, Tema.LILA, Tema.SALVIA, Tema.DORADO};
+    /** Un solo color para todos los circulos: el jugador descubre su sello por la imagen, no por el color. */
+    private static final Color COLOR_CIRCULO = Tema.COBRE;
     private static final int ANCHO_CARRIL = 62;
     static final int ANCHO = ANCHO_CARRIL * PistaSellos.CARRILES + 36, ALTO = 438;
 
@@ -219,8 +220,8 @@ final class JuegoSellos extends MiniJuego {
             double cx = centroCarril(i);
             double luz = Math.max(0, 1 - (tiempo - pisado[i]) / 0.22);
             if (luz > 0) {
-                g.setPaint(new GradientPaint((float) cx, c.y, Tema.alfa(COLOR_CARRIL[i], 0), (float) cx, ly,
-                        Tema.alfa(COLOR_CARRIL[i], (int) (90 * luz))));
+                g.setPaint(new GradientPaint((float) cx, c.y, Tema.alfa(COLOR_CIRCULO, 0), (float) cx, ly,
+                        Tema.alfa(COLOR_CIRCULO, (int) (90 * luz))));
                 g.fillRect(c.x + i * ANCHO_CARRIL + 4, c.y, ANCHO_CARRIL - 8, ly - c.y);
             }
             if (i > 0) {
@@ -229,9 +230,9 @@ final class JuegoSellos extends MiniJuego {
             }
             // receptor: anillo de la paleta
             double r = 22 + 3 * luz;
-            g.setColor(Tema.alfa(Tema.mezclar(COLOR_CARRIL[i], Tema.CREMA, 0.5), (int) (26 + 150 * luz)));
+            g.setColor(Tema.alfa(Tema.mezclar(COLOR_CIRCULO, Tema.CREMA, 0.5), (int) (26 + 150 * luz)));
             g.fill(new Ellipse2D.Double(cx - r, ly - r, 2 * r, 2 * r));
-            g.setColor(Tema.altoContraste ? Color.WHITE : Tema.mezclar(COLOR_CARRIL[i], Tema.CREMA, 0.35));
+            g.setColor(Tema.altoContraste ? Color.WHITE : Tema.mezclar(COLOR_CIRCULO, Tema.CREMA, 0.35));
             g.setStroke(new BasicStroke(2.6f));
             g.draw(new Ellipse2D.Double(cx - r, ly - r, 2 * r, 2 * r));
             g.setStroke(new BasicStroke(1));
@@ -246,8 +247,7 @@ final class JuegoSellos extends MiniJuego {
             double y = ly - pista.alturaSobreLinea(n);
             double edad = pista.getT() - n.cuando;
             if (n.estado == 0) {
-                boolean otro = pista.getElegido() != null && n.sello != pista.getElegido();
-                circulo(s, n.sello, cx, y, 40, otro ? 0.45f : 1f);
+                circulo(s, n.sello, cx, y, 40, 1f);
             } else if (n.estado == 1 && edad < 0.3) {
                 double f = edad / 0.3;
                 circulo(s, n.sello, cx, ly, 40 * (1 + f * 0.5), (float) (1 - f));
@@ -287,11 +287,11 @@ final class JuegoSellos extends MiniJuego {
         }
     }
 
-    /** Circulo estilizado con el sello: anillo del color del sello (paleta) y la imagen del sello. */
+    /** Circulo estilizado con el sello: todos con el mismo anillo y la imagen del sello adentro. */
     static void circulo(Graphics2D g, Veredicto v, double cx, double cy, double d, float alfa) {
         Graphics2D s = (Graphics2D) g.create();
         s.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, Math.max(0, Math.min(1, alfa))));
-        Color c = OficinaVista.colorSello(v);
+        Color c = Tema.altoContraste ? Color.WHITE : COLOR_CIRCULO;
         s.setColor(new Color(0, 0, 0, 80));
         s.fill(new Ellipse2D.Double(cx - d / 2 + 1, cy - d / 2 + 3, d, d));
         s.setPaint(new RadialGradientPaint(new Point2D.Double(cx - d * 0.15, cy - d * 0.2), (float) (d * 0.7),

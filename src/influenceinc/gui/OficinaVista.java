@@ -77,15 +77,17 @@ public class OficinaVista extends Lienzo {
     private enum Juego { NADA, LUPA, BILLETERA, MINIJUEGO }
 
     /** Paneles de los botones de la barra (no tapan la barra). */
-    private enum Panel { NADA, AYUDA, ESTRUCTURAS, PAUSA, MAPA, TIENDA }
+    private enum Panel { NADA, AYUDA, ESTRUCTURAS, PAUSA, MAPA }
 
     // zonas de la pantalla
     private static final int BARRA = 64;
     /** Ancho de la escena (ventanilla + dialogo). Se corre a la izquierda cuando sube el celular. */
     private static final int ESCENA_W = 1000;
     private static final int X_CENTRADA = (W - ESCENA_W) / 2, X_CORRIDA = 36;
-    private Rectangle ventanaR = new Rectangle(X_CENTRADA, 78, ESCENA_W, 466);
-    private Rectangle dialogoR = new Rectangle(X_CENTRADA, 556, ESCENA_W, 288);
+    /** Alto del letrero de la ventanilla (encima del vidrio). */
+    private static final int CABECERA = 46;
+    private Rectangle ventanaR = new Rectangle(X_CENTRADA, 76, ESCENA_W, 564);
+    private Rectangle dialogoR = new Rectangle(X_CENTRADA, 652, ESCENA_W, 194);
 
     private final Oyente oyente;
     final Avisos avisos = new Avisos();
@@ -537,7 +539,8 @@ public class OficinaVista extends Lienzo {
 
     /** Donde va el panel de la pista: pegado al lado derecho de la ventanilla, sin tapar al visitante. */
     Rectangle zonaPista(int ancho, int alto) {
-        return new Rectangle(ventanaR.x + ventanaR.width - ancho - 16, ventanaR.y + 14, ancho, alto);
+        Rectangle v = vidrio();
+        return new Rectangle(v.x + v.width - ancho - 16, v.y + 12, ancho, alto);
     }
 
     /** La pista salio bien: el sello cae sobre la publicacion en el celular. */
@@ -669,7 +672,7 @@ public class OficinaVista extends Lienzo {
     }
 
     void abrirTienda() {
-        panel = Panel.TIENDA;
+        cel.abrir(CelularVista.App.TIENDA);
         arrastraPregunta = null;
     }
 
@@ -706,19 +709,49 @@ public class OficinaVista extends Lienzo {
         }
     }
 
+    /** Tecla K o boton "Llamar a la institucion": llama a la institucion del caso (si hay). */
     void llamar() {
-        if (caso == null || estado != Estado.ATENDIENDO) {
+        if (j == null) {
             return;
         }
-        if (!j.puedeLlamar()) {
-            String no = j.motivoNoAplica(Herramienta.DIRECTORIO);
-            alertaRoja(no != null ? no : "Ya llamaste a la institución por este caso.");
+        String inst = j.institucionDelCaso();
+        llamarContacto(inst != null ? inst : "Institución");
+    }
+
+    /**
+     * Llamada a una persona de la agenda del celular. Si sirve para el caso es
+     * la llamada de verificacion; si no aplica, cuesta 5 de VIDA por hacerle
+     * perder el tiempo a la gente.
+     */
+    void llamarContacto(String nombre) {
+        if (j == null || estado == Estado.LLAMADA || estado == Estado.NOTICIAS || estado == Estado.SELLANDO) {
             return;
         }
+        if (j.enApagon()) {
+            alertaRoja("Sin señal: hay un apagón. Espera a que vuelva la luz.");
+            return;
+        }
+        int advAntes = j.jugador.advertencias;
+        String[] r = j.llamarA(nombre);
+        boolean ok = r[1].equals("1");
         Sonido.tocar(Sonido.Tipo.TELEFONO);
-        llamadaInst = j.llamar();
-        cel.abrir(CelularVista.App.TELEFONO);
-        avisos.agregar("Llamada", llamadaInst, Tema.acento2(), 0);
+        cel.mostrarLlamada(nombre, r[0], ok);
+        if (ok) {
+            llamadaInst = r[0];
+            avisos.agregar("Llamada", r[0], Tema.acento2(), 0);
+            return;
+        }
+        Sonido.tocar(Sonido.Tipo.MAL);
+        avisos.agregar("Llamada que no aplica: −" + JugadorVerificador.COSTO_LLAMADA_MALA + " de vida",
+                "Le hiciste perder el tiempo a " + nombre + ". Vida: " + j.jugador.vida + "/" + JugadorVerificador.VIDA_MAX + ".",
+                Tema.mal(), 0);
+        if (j.jugador.advertencias > advAntes) {
+            avisos.agregar("ADVERTENCIA " + j.jugador.advertencias + "/" + JugadorVerificador.MAX_ADVERTENCIAS,
+                    "Te quedaste sin vida por tantas llamadas inútiles. Don Ramiro te advierte.", Tema.mal(), 200);
+        }
+        if (j.jugador.despedido) {
+            terminarDia();
+        }
     }
 
     private void acusar() {
@@ -804,14 +837,11 @@ public class OficinaVista extends Lienzo {
             panel = panel == Panel.MAPA ? Panel.NADA : Panel.MAPA;
             return;
         }
-        if (k == KeyEvent.VK_F4 || k == KeyEvent.VK_S) {
-            panel = panel == Panel.TIENDA ? Panel.NADA : Panel.TIENDA;
-            return;
-        }
-        if (panel == Panel.TIENDA) {
-            int i = k - KeyEvent.VK_1;
-            if (i >= 0 && i < Tienda.Articulo.values().length) {
-                comprar(Tienda.Articulo.values()[i]);
+        if ((k == KeyEvent.VK_F4 || k == KeyEvent.VK_S) && estado != Estado.LLAMADA) {
+            if (cel.abierto() && cel.app() == CelularVista.App.TIENDA) {
+                cel.cerrar();
+            } else {
+                abrirTienda();
             }
             return;
         }
@@ -1174,8 +1204,8 @@ public class OficinaVista extends Lienzo {
     private void calcularEscena() {
         double k = cel.visible();
         int x = (int) Math.round(X_CENTRADA + (X_CORRIDA - X_CENTRADA) * k);
-        ventanaR = new Rectangle(x, 78, ESCENA_W, 466);
-        dialogoR = new Rectangle(x, 556, ESCENA_W, 288);
+        ventanaR = new Rectangle(x, 76, ESCENA_W, 564);
+        dialogoR = new Rectangle(x, 652, ESCENA_W, 194);
     }
 
     @Override
@@ -1235,9 +1265,6 @@ public class OficinaVista extends Lienzo {
             case MAPA:
                 panelMapa(g);
                 break;
-            case TIENDA:
-                tienda(g);
-                break;
             default:
                 break;
         }
@@ -1246,7 +1273,7 @@ public class OficinaVista extends Lienzo {
         boolean conPista = juego == Juego.MINIJUEGO && mini instanceof JuegoSellos;
         if ((juego == Juego.NADA || conPista) && panel == Panel.NADA && estado != Estado.FIN_DIA && estado != Estado.TURNO
                 && estado != Estado.NOTICIAS) {
-            int ay = ventanaR.y + (t - ultimaHoraT < 7 ? 58 : 16);
+            int ay = vidrio().y + (t - ultimaHoraT < 7 ? 58 : 16);
             avisos.dibujar(g, ventanaR.x + 16, ay, 380, H, W);
         } else {
             avisos.dibujar(g, -2000, 88, 10, H, W);   // solo los subtitulos
@@ -1337,23 +1364,33 @@ public class OficinaVista extends Lienzo {
                 g.drawRoundRect(x, 33, 18, 20, 6, 6);
             }
         }
+        // vida (baja con las llamadas que no aplican)
+        g.setFont(Tema.fuente(Font.BOLD, 13));
+        g.setColor(Tema.texto());
+        g.drawString("Vida", 750, 26);
+        String vs = String.valueOf(jv.vida);
+        g.drawString(vs, 836 - g.getFontMetrics().stringWidth(vs), 26);
+        g.setColor(Tema.altoContraste ? Color.DARK_GRAY : new Color(255, 235, 215, 40));
+        g.fillRoundRect(750, 35, 86, 12, 12, 12);
+        g.setColor(jv.vida > 50 ? Tema.SALVIA : jv.vida > 25 ? Tema.DORADO : Tema.LADRILLO);
+        g.fillRoundRect(750, 35, 86 * jv.vida / JugadorVerificador.VIDA_MAX, 12, 12, 12);
         // puntos y dinero
         g.setFont(Tema.fuente(Font.BOLD, 13));
         g.setColor(Tema.texto());
-        g.drawString("Puntos", 760, 26);
+        g.drawString("Puntos", 860, 26);
         g.setFont(Tema.fuente(Font.BOLD, 18));
         g.setColor(Tema.acento2());
-        g.drawString(String.valueOf(jv.puntos), 760, 48);
+        g.drawString(String.valueOf(jv.puntos), 860, 48);
         g.setFont(Tema.fuente(Font.BOLD, 13));
         g.setColor(Tema.texto());
-        g.drawString("Dinero", 850, 26);
+        g.drawString("Dinero", 940, 26);
         g.setFont(Tema.fuente(Font.BOLD, 18));
         g.setColor(Tema.acento2());
-        g.drawString("$" + jv.dinero, 850, 48);
+        g.drawString("$" + jv.dinero, 940, 48);
         if (!marcadorRed.isEmpty()) {
             g.setFont(Tema.fuente(Font.PLAIN, 11));
             g.setColor(Tema.textoSuave());
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), "Red: " + String.join("  ·  ", marcadorRed), 230), 950, 38);
+            g.drawString(Dibujo.recortar(g.getFontMetrics(), "Red: " + String.join("  ·  ", marcadorRed), 160), 1030, 38);
         }
         // los 4 botones con imagen: siempre visibles, en cualquier rol y pantalla
         String[][] b = {{"ayuda.png", "Ayuda (M)"}, {"estructura.png", "Estructuras (F2)"}, {"mapa.png", "Mapa y ciudad (F3)"},
@@ -1438,8 +1475,66 @@ public class OficinaVista extends Lienzo {
         }
     }
 
+    /** El vidrio de la ventanilla (debajo del letrero). */
+    private Rectangle vidrio() {
+        return new Rectangle(ventanaR.x, ventanaR.y + CABECERA, ventanaR.width, ventanaR.height - CABECERA);
+    }
+
+    /** Numero de turno que se ve en el letrero (sube con cada visitante). */
+    private int turnoActual() {
+        return j.getResultados().size() + (caso != null ? 1 : 0);
+    }
+
+    /**
+     * Letrero de la ventanilla: placa de madera con "ATENCION AL PUBLICO" y un
+     * turnero de luces que muestra el numero que se esta atendiendo.
+     */
+    private void cabecera(Graphics2D g) {
+        Rectangle r = new Rectangle(ventanaR.x, ventanaR.y, ventanaR.width, CABECERA + 14);
+        RoundRectangle2D placa = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 22, 22);
+        Dibujo.sombra(g, placa, 5, 4);
+        if (Tema.altoContraste) {
+            g.setColor(Color.BLACK);
+        } else {
+            g.setPaint(new GradientPaint(r.x, r.y, Tema.MADERA_MEDIA, r.x, r.y + r.height, Tema.MADERA));
+        }
+        g.fill(placa);
+        g.setColor(Tema.altoContraste ? Color.WHITE : Tema.alfa(Tema.DORADO, 120));
+        g.draw(new RoundRectangle2D.Double(r.x + 4, r.y + 4, r.width - 8, r.height - 8, 18, 18));
+        // tornillos de bronce
+        for (int i = 0; i < 2; i++) {
+            double tx = i == 0 ? r.x + 16 : r.x + r.width - 16;
+            g.setColor(Tema.DORADO);
+            g.fill(new Ellipse2D.Double(tx - 4, r.y + 19, 8, 8));
+            g.setColor(Tema.alfa(Tema.MADERA, 160));
+            g.drawLine((int) tx - 2, r.y + 23, (int) tx + 2, r.y + 23);
+        }
+        g.setFont(Tema.fuente(Font.BOLD, 16));
+        g.setColor(Tema.altoContraste ? Color.WHITE : Tema.CREMA);
+        g.drawString("ATENCIÓN AL PÚBLICO", r.x + 36, r.y + 29);
+        g.setFont(Tema.fuente(Font.PLAIN, 12));
+        g.setColor(Tema.textoSuave());
+        g.drawString("Influence, Inc.  ·  Mesa de verificación  ·  Horario 9:00 a 18:00", r.x + 236, r.y + 29);
+        // turnero
+        Rectangle led = new Rectangle(r.x + r.width - 214, r.y + 9, 184, 30);
+        g.setColor(new Color(24, 12, 12));
+        g.fillRoundRect(led.x, led.y, led.width, led.height, 10, 10);
+        g.setColor(Tema.alfa(Tema.DORADO, 90));
+        g.drawRoundRect(led.x, led.y, led.width, led.height, 10, 10);
+        boolean nuevo = estado == Estado.ENTRANDO && ((int) (t * 6)) % 2 == 0;
+        g.setFont(Tema.fuente(Font.BOLD, 12));
+        g.setColor(Tema.alfa(Tema.DORADO, 170));
+        g.drawString("TURNO", led.x + 14, led.y + 20);
+        g.setFont(Tema.fuente(Font.BOLD, 19));
+        g.setColor(nuevo ? Tema.CREMA : Tema.DORADO);
+        g.drawString(String.format("A-%03d", turnoActual()), led.x + 70, led.y + 22);
+        g.setColor(j.enFila() > 0 ? Tema.SALVIA : Tema.LADRILLO);
+        g.fill(new Ellipse2D.Double(led.x + led.width - 20, led.y + 11, 8, 8));
+    }
+
     private void ventana(Graphics2D g) {
-        Rectangle r = ventanaR;
+        cabecera(g);
+        Rectangle r = vidrio();
         if (bufVentana == null || bufVentana.getWidth() != r.width || bufVentana.getHeight() != r.height) {
             bufVentana = new BufferedImage(r.width, r.height, BufferedImage.TYPE_INT_ARGB);
         }
@@ -1525,7 +1620,7 @@ public class OficinaVista extends Lienzo {
             b.setPaint(new RadialGradientPaint(new Point2D.Double(r.width / 2.0 + desliz, 230), 260f, new float[]{0f, 1f},
                     new Color[]{new Color(255, 240, 220, 60), new Color(255, 240, 220, 0)}));
             b.fill(new Ellipse2D.Double(r.width / 2.0 + desliz - 260, -30, 520, 520));
-            Caras.dibujar(b, caso.visitante.cara, r.width / 2.0 + desliz, 196 + bob, 1.72, expr, parpadeoT < 0, habla);
+            Caras.dibujar(b, caso.visitante.cara, r.width / 2.0 + desliz, 214 + bob, 1.72, expr, parpadeoT < 0, habla);
         }
         // vidrio: reflejo, rejilla para hablar y vinilo de la agencia
         b.setPaint(new GradientPaint(0, 0, new Color(255, 255, 255, 40), r.width, r.height, new Color(255, 255, 255, 0)));
@@ -1548,9 +1643,35 @@ public class OficinaVista extends Lienzo {
                 b.fill(new Ellipse2D.Double(gx + i * 9 - 2, gy + k * 7 - 2, 4, 4));
             }
         }
-        b.setFont(Tema.fuente(Font.BOLD, 13));
-        b.setColor(new Color(255, 255, 255, 70));
-        b.drawString("INFLUENCE, INC.  ·  MESA DE VERIFICACIÓN", 30, 36);
+        // banda esmerilada del vidrio con el logo en vinilo
+        int banda = r.height - 150;
+        b.setColor(new Color(255, 250, 244, Tema.altoContraste ? 0 : 46));
+        b.fillRect(0, banda, r.width, 18);
+        b.setColor(new Color(255, 255, 255, Tema.altoContraste ? 0 : 70));
+        b.setFont(Tema.fuente(Font.BOLD, 10.5f));
+        for (int x = 30; x < r.width; x += 250) {
+            b.drawString("INFLUENCE, INC.", x, banda + 13);
+        }
+        // aviso pegado en la parte baja del vidrio
+        if (!Tema.altoContraste) {
+            Graphics2D av = (Graphics2D) b.create();
+            av.translate(4, banda - 100);
+            av.rotate(0.05, 70, 40);
+            av.setColor(new Color(0, 0, 0, 40));
+            av.fillRect(24, 22, 104, 62);
+            av.setColor(Tema.PAPEL);
+            av.fillRect(22, 18, 104, 62);
+            av.setColor(Tema.alfa(Tema.DORADO, 160));
+            av.fillRect(56, 12, 36, 12);
+            av.setFont(Tema.fuente(Font.BOLD, 10));
+            av.setColor(Tema.COBRE);
+            av.drawString("¿Lo viste en", 32, 40);
+            av.drawString("Civitas?", 32, 53);
+            av.setFont(Tema.fuente(Font.PLAIN, 9.5f));
+            av.setColor(Tema.TINTA);
+            av.drawString("Verifica antes", 32, 68);
+            av.dispose();
+        }
         // mostrador de madera
         int my0 = r.height - 74;
         if (Tema.altoContraste) {
@@ -1567,15 +1688,30 @@ public class OficinaVista extends Lienzo {
                 int y = my0 + 12 + vet.nextInt(56);
                 b.drawLine(vet.nextInt(r.width / 2), y, r.width / 2 + vet.nextInt(r.width / 2), y + vet.nextInt(3) - 1);
             }
-            // ranura para pasar papeles
-            b.setColor(new Color(40, 20, 14, 160));
-            b.fillRoundRect(r.width / 2 - 110, my0 - 6, 220, 12, 6, 6);
+            // bandeja hundida para pasar documentos por debajo del vidrio
+            int cx0 = r.width / 2;
+            b.setColor(new Color(40, 20, 14, 170));
+            b.fill(new java.awt.geom.Arc2D.Double(cx0 - 130, my0 - 34, 260, 68, 180, 180, java.awt.geom.Arc2D.CHORD));
+            b.setPaint(new GradientPaint(0, my0, new Color(30, 14, 10, 200), 0, my0 + 30, new Color(90, 48, 30, 120)));
+            b.fill(new java.awt.geom.Arc2D.Double(cx0 - 118, my0 - 26, 236, 54, 180, 180, java.awt.geom.Arc2D.CHORD));
+            b.setColor(new Color(255, 220, 180, 60));
+            b.draw(new java.awt.geom.Arc2D.Double(cx0 - 130, my0 - 34, 260, 68, 180, 180, java.awt.geom.Arc2D.OPEN));
+            // perfil de aluminio donde el vidrio toca el mostrador
+            b.setPaint(new GradientPaint(0, my0 - 6, new Color(220, 200, 190), 0, my0, new Color(150, 120, 110)));
+            b.fillRect(0, my0 - 6, cx0 - 130, 6);
+            b.fillRect(cx0 + 130, my0 - 6, r.width - cx0 - 130, 6);
+            // timbre de atencion
+            int tx = 120, ty = my0 + 30;
+            b.setColor(new Color(40, 20, 14, 90));
+            b.fill(new Ellipse2D.Double(tx - 26, ty + 6, 52, 12));
+            b.setPaint(new GradientPaint(tx - 20, ty - 18, Tema.mezclar(Tema.DORADO, Color.WHITE, 0.4), tx + 20, ty,
+                    Tema.DORADO.darker()));
+            b.fill(new java.awt.geom.Arc2D.Double(tx - 20, ty - 18, 40, 36, 0, 180, java.awt.geom.Arc2D.CHORD));
+            b.setColor(Tema.MADERA);
+            b.fillRoundRect(tx - 24, ty, 48, 9, 6, 6);
+            b.setColor(Tema.DORADO.darker());
+            b.fillRect(tx - 2, ty - 24, 4, 7);
         }
-        b.setColor(new Color(42, 23, 18));
-        b.fillRoundRect(r.width / 2 - 70, r.height - 44, 140, 28, 14, 14);
-        b.setFont(Tema.fuente(Font.BOLD, 12));
-        b.setColor(Tema.DORADO);
-        Dibujo.centrado(b, "VENTANILLA 3", r.width / 2.0, r.height - 25);
         b.dispose();
 
         // marco de madera con sombra
@@ -1615,12 +1751,15 @@ public class OficinaVista extends Lienzo {
             s.dispose();
         }
         v.dispose();
-        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(96, 50, 30));
-        g.setStroke(new BasicStroke(10));
+        g.setColor(Tema.altoContraste ? Color.WHITE : Tema.MADERA);
+        g.setStroke(new BasicStroke(12));
         g.drawRoundRect(r.x, r.y, r.width, r.height, 22, 22);
-        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(214, 150, 104, 140));
-        g.setStroke(new BasicStroke(1.5f));
-        g.drawRoundRect(r.x + 5, r.y + 5, r.width - 10, r.height - 10, 18, 18);
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(206, 186, 176));
+        g.setStroke(new BasicStroke(3));
+        g.drawRoundRect(r.x + 6, r.y + 6, r.width - 12, r.height - 12, 16, 16);
+        g.setColor(Tema.altoContraste ? Color.WHITE : Tema.alfa(Tema.DORADO, 150));
+        g.setStroke(new BasicStroke(1.2f));
+        g.drawRoundRect(r.x + 9, r.y + 9, r.width - 18, r.height - 18, 14, 14);
         g.setStroke(new BasicStroke(1));
         // ULTIMA HORA: franja sobre el vidrio
         if (ultimaHoraTxt != null && t - ultimaHoraT < 7 && estado != Estado.NOTICIAS) {
@@ -1667,26 +1806,42 @@ public class OficinaVista extends Lienzo {
     }
 
     // ------------------------------------------------------------ cuadro de dialogo
+    /**
+     * Cuadro de dialogo compacto: una pestana con el nombre, dos lineas de
+     * texto, las preguntas en chips de 2 columnas y una columna de acciones.
+     */
     private void dialogo(Graphics2D g) {
         Rectangle r = dialogoR;
-        RoundRectangle2D s = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 24, 24);
+        RoundRectangle2D s = new RoundRectangle2D.Double(r.x, r.y, r.width, r.height, 22, 22);
         Dibujo.sombra(g, s, 5, 4);
-        g.setColor(Tema.altoContraste ? Color.BLACK : Tema.PAPEL);
+        if (Tema.altoContraste) {
+            g.setColor(Color.BLACK);
+        } else {
+            g.setPaint(new GradientPaint(r.x, r.y, Color.WHITE, r.x, r.y + r.height, Tema.PAPEL));
+        }
         g.fill(s);
+        // cinta de cobre a la izquierda
+        if (!Tema.altoContraste) {
+            Graphics2D c = (Graphics2D) g.create();
+            c.clip(s);
+            c.setColor(Tema.COBRE);
+            c.fillRect(r.x, r.y, 6, r.height);
+            c.dispose();
+        }
         boolean destino = arrastraPregunta != null && ventanaR.contains(dragX, dragY);
-        g.setColor(destino ? Tema.acento2() : Tema.altoContraste ? Color.WHITE : new Color(214, 178, 158));
-        g.setStroke(new BasicStroke(destino ? 3 : 1.4f));
+        g.setColor(destino ? Tema.acento2() : Tema.altoContraste ? Color.WHITE : new Color(226, 196, 180));
+        g.setStroke(new BasicStroke(destino ? 3 : 1.2f));
         g.draw(s);
         g.setStroke(new BasicStroke(1));
-        int textoW = 716;
-        Rectangle acc = new Rectangle(r.x + r.width - 222, r.y + 22, 200, r.height - 44);
-        if (estado == Estado.TURNO || estado == Estado.NOTICIAS || estado == Estado.FIN_DIA) {
+        int textoW = 724;
+        Rectangle acc = new Rectangle(r.x + r.width - 222, r.y + 16, 200, r.height - 32);
+        if (estado == Estado.TURNO || estado == Estado.NOTICIAS || estado == Estado.FIN_DIA || estado == Estado.ESPERA) {
             return;
         }
         if (estado == Estado.RESULTADO && ultimo != null) {
-            resultado(g, new Rectangle(r.x + 26, r.y + 22, textoW, r.height - 40));
+            resultado(g, new Rectangle(r.x + 24, r.y + 18, textoW, r.height - 28));
             separadorAcciones(g, r, acc);
-            boton(g, new Rectangle(acc.x, acc.y + acc.height - 56, acc.width, 56), "Despedir  (Espacio)",
+            boton(g, new Rectangle(acc.x, acc.y + acc.height - 50, acc.width, 50), "Despedir  (Espacio)",
                     Dibujo.Estilo.PRINCIPAL, this::despedirVisitante);
             return;
         }
@@ -1699,51 +1854,50 @@ public class OficinaVista extends Lienzo {
         } else {
             nombre = quienHabla + "  ·  " + caso.visitante.rol.etiqueta;
         }
-        g.setFont(Tema.fuente(Font.BOLD, 13));
-        int nw = g.getFontMetrics().stringWidth(nombre) + 30;
+        g.setFont(Tema.fuente(Font.BOLD, 12));
+        int nw = g.getFontMetrics().stringWidth(nombre) + 26;
         g.setColor(Tema.altoContraste ? Color.YELLOW : Tema.COBRE);
-        g.fillRoundRect(r.x + 22, r.y + 16, nw, 28, 14, 14);
+        g.fillRoundRect(r.x + 24, r.y + 14, nw, 24, 12, 12);
         g.setColor(Tema.altoContraste ? Color.BLACK : Tema.CREMA);
-        g.drawString(nombre, r.x + 37, r.y + 35);
-        // el texto
-        int ty = r.y + 74;
+        g.drawString(nombre, r.x + 37, r.y + 31);
+        // el texto (dos lineas)
+        int ty = r.y + 62;
         if (estado == Estado.VACIO) {
             g.setColor(Tema.tintaSuave());
-            Dibujo.parrafo(g, Tema.fuente(Font.ITALIC, 16), j.isTerminada() ? "Ya cerramos por hoy."
+            Dibujo.parrafo(g, Tema.fuente(Font.ITALIC, 15), j.isTerminada() ? "Ya cerramos por hoy."
                     : "La ventanilla está libre. " + j.enFila() + (j.enFila() == 1 ? " persona espera" : " personas esperan")
-                    + " en la fila (cola FIFO: pasa primero quien llegó primero).", r.x + 26, ty, textoW, 23, r.y + 140);
+                    + " en la fila (cola FIFO: pasa primero quien llegó primero).", r.x + 26, ty, textoW, 21, r.y + 110);
         } else if (estado == Estado.LLAMADA) {
-            // la llamada se lee como una transcripcion: lo anterior queda en gris
-            int yy = ty;
-            int desde = Math.max(0, lineaLlamada - 3);
-            for (int i = desde; i < lineaLlamada; i++) {
+            if (lineaLlamada > 0) {
                 g.setColor(Tema.tintaSuave());
-                yy = Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 14), llamada[i], r.x + 26, yy, textoW, 20, r.y + r.height) + 8;
+                g.setFont(Tema.fuente(Font.ITALIC, 12.5f));
+                g.drawString(Dibujo.recortar(g.getFontMetrics(), llamada[lineaLlamada - 1], textoW), r.x + 26, ty);
+                ty += 24;
             }
             g.setColor(Tema.tinta());
             String vis = texto.substring(0, Math.min(texto.length(), (int) letras));
-            Dibujo.parrafo(g, Tema.media(16.5f), vis, r.x + 26, yy + 2, textoW, 23, r.y + r.height - 10);
+            Dibujo.parrafo(g, Tema.media(15.5f), vis, r.x + 26, ty, textoW, 21, r.y + r.height - 10);
         } else {
             g.setColor(Tema.tinta());
             String vis = texto.substring(0, Math.min(texto.length(), (int) letras));
-            Dibujo.parrafo(g, Tema.media(16.5f), vis, r.x + 26, ty, textoW, 23, r.y + 128);
+            Dibujo.parrafo(g, Tema.media(15.5f), vis, r.x + 26, ty, textoW, 21, r.y + 90);
             if (letras >= texto.length() && ((int) (t * 2)) % 2 == 0 && !texto.isEmpty()) {
-                Dibujo.triangulo(g, r.x + textoW + 18, r.y + 118, 5, false, Tema.acento());
+                Dibujo.triangulo(g, r.x + textoW + 18, r.y + 82, 4.5, false, Tema.acento());
             }
         }
         separadorAcciones(g, r, acc);
         switch (estado) {
             case LLAMADA:
-                boton(g, new Rectangle(acc.x, acc.y, acc.width, 56), lineaLlamada < llamada.length - 1 ? "Seguir  (Espacio)"
+                boton(g, new Rectangle(acc.x, acc.y, acc.width, 50), lineaLlamada < llamada.length - 1 ? "Seguir  (Espacio)"
                         : "Colgar  (Espacio)", Dibujo.Estilo.PRINCIPAL, this::avanzarLlamada);
-                pista(g, acc, "Don Ramiro te llama al celular. Escucha las instrucciones del día.");
+                pista(g, acc, "Don Ramiro te llama al celular.");
                 return;
             case VACIO:
                 if (!j.isTerminada()) {
-                    boton(g, new Rectangle(acc.x, acc.y, acc.width, 56), "Siguiente  (Espacio)", Dibujo.Estilo.PRINCIPAL,
+                    boton(g, new Rectangle(acc.x, acc.y, acc.width, 50), "Siguiente  (Espacio)", Dibujo.Estilo.PRINCIPAL,
                             this::hacerPasar);
                 }
-                boton(g, new Rectangle(acc.x, acc.y + 70, acc.width, 44), cel.abierto() ? "Guardar celular  (P)"
+                boton(g, new Rectangle(acc.x, acc.y + 60, acc.width, 40), cel.abierto() ? "Guardar celular  (P)"
                         : "Ver celular  (P)", Dibujo.Estilo.SECUNDARIO, cel::alternar);
                 return;
             case ENTRANDO:
@@ -1756,26 +1910,22 @@ public class OficinaVista extends Lienzo {
             return;
         }
         // preguntas: arbol de dialogo (se arrastran hacia el visitante, clic o 1-6)
-        int qy = r.y + 140;
-        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(214, 178, 158));
-        g.fillRect(r.x + 26, qy - 8, textoW, 1);
-        g.setFont(Tema.fuente(Font.BOLD, 10.5f));
+        int qy = r.y + 98;
+        g.setFont(Tema.fuente(Font.BOLD, 9.5f));
         g.setColor(Tema.tintaSuave());
-        String cab = "PREGUNTAS  ·  arrastra una hacia el visitante (o 1-6)";
-        int cw = g.getFontMetrics().stringWidth(cab) + 16;
-        g.setColor(Tema.altoContraste ? Color.BLACK : Tema.PAPEL);
-        g.fillRect(r.x + 34, qy - 15, cw, 14);
-        g.setColor(Tema.tintaSuave());
-        g.drawString(cab, r.x + 42, qy - 4);
+        g.drawString("PREGUNTAS  ·  arrástralas hacia el visitante (o 1-6)", r.x + 26, qy);
         List<NodoDialogo> op = j.opciones();
-        int colW = (textoW - 12) / 2;
+        int colW = (textoW - 10) / 2;
         for (int i = 0; i < op.size() && i < 6; i++) {
             NodoDialogo n = op.get(i);
-            Rectangle br = new Rectangle(r.x + 26 + (i % 2) * (colW + 12), qy + 6 + (i / 2) * 46, colW, 40);
+            Rectangle br = new Rectangle(r.x + 24 + (i % 2) * (colW + 10), qy + 8 + (i / 2) * 28, colW, 25);
+            if (br.y + br.height > r.y + r.height - 4) {
+                break;
+            }
             boolean arrastrada = n == arrastraPregunta && (Math.abs(dragX - pressX) > 6 || Math.abs(dragY - pressY) > 6);
             if (arrastrada) {
                 g.setColor(new Color(200, 160, 140, 50));
-                g.fillRoundRect(br.x, br.y, br.width, br.height, 16, 16);
+                g.fillRoundRect(br.x, br.y, br.width, br.height, 14, 14);
             } else {
                 tarjetaPregunta(g, br, i + 1, n, escritorioLibre() && encima(br), false);
             }
@@ -1783,24 +1933,31 @@ public class OficinaVista extends Lienzo {
         }
         if (op.isEmpty()) {
             g.setColor(Tema.tintaSuave());
-            g.setFont(Tema.fuente(Font.ITALIC, 14));
-            g.drawString("Ya no tiene más que decir. Investiga en el celular o decide el sello.", r.x + 30, qy + 34);
+            g.setFont(Tema.fuente(Font.ITALIC, 13));
+            g.drawString("Ya no tiene más que decir. Investiga en el celular o decide el sello.", r.x + 26, qy + 26);
         }
         // acciones
         boolean listo = estado == Estado.ATENDIENDO;
-        Rectangle bd = new Rectangle(acc.x, acc.y, acc.width, 62);
+        Rectangle bd = new Rectangle(acc.x, acc.y, acc.width, 52);
         if (listo) {
             boton(g, bd, "Decidir el sello  (D)", Dibujo.Estilo.PRINCIPAL, this::decidir);
         } else {
             Dibujo.boton(g, bd, "Decidir el sello  (D)", Dibujo.Estilo.PRINCIPAL, false, false);
         }
-        boton(g, new Rectangle(acc.x, acc.y + 76, acc.width, 44), cel.abierto() ? "Guardar celular  (P)" : "Abrir celular  (P)",
-                Dibujo.Estilo.SECUNDARIO, cel::alternar);
-        if (j.jugador.rol.tieneMiniJuego() && j.puedeUsarHabilidad()) {
-            String hab = j.jugador.rol.habilidad.length() > 16 ? "Mi habilidad" : j.jugador.rol.habilidad;
-            boton(g, new Rectangle(acc.x, acc.y + 132, acc.width, 44), hab + "  (U)", Dibujo.Estilo.OSCURO,
-                    this::usarHabilidad);
+        int bw = (acc.width - 8) / 2;
+        boton(g, new Rectangle(acc.x, acc.y + 62, j.jugador.rol.tieneMiniJuego() ? bw : acc.width, 40),
+                cel.abierto() ? "Guardar" : "Celular", Dibujo.Estilo.SECUNDARIO, cel::alternar);
+        if (j.jugador.rol.tieneMiniJuego()) {
+            if (j.puedeUsarHabilidad()) {
+                boton(g, new Rectangle(acc.x + bw + 8, acc.y + 62, bw, 40), "Habilidad", Dibujo.Estilo.OSCURO,
+                        this::usarHabilidad);
+            } else {
+                Dibujo.boton(g, new Rectangle(acc.x + bw + 8, acc.y + 62, bw, 40), "Habilidad", Dibujo.Estilo.OSCURO, false, false);
+            }
         }
+        g.setFont(Tema.fuente(Font.PLAIN, 10.5f));
+        g.setColor(Tema.tintaSuave());
+        g.drawString("Vida " + j.jugador.vida + "  ·  llamar mal cuesta 5", acc.x + 2, acc.y + 124);
     }
 
     private void separadorAcciones(Graphics2D g, Rectangle r, Rectangle acc) {
@@ -1817,18 +1974,18 @@ public class OficinaVista extends Lienzo {
     private void resultado(Graphics2D g, Rectangle c) {
         Jornada.Resultado r = ultimo;
         boolean ok = r.efecto.acierto;
-        Iconos.marca(g, ok ? 2 : 3, c.x + 14, c.y + 16, 11);
-        g.setFont(Tema.fuente(Font.BOLD, 20));
+        Iconos.marca(g, ok ? 2 : 3, c.x + 14, c.y + 12, 10);
+        g.setFont(Tema.fuente(Font.BOLD, 18));
         g.setColor(ok ? Tema.bien().darker() : Tema.mal());
         g.drawString((ok ? "¡CORRECTO!" : "ERROR") + "   " + (r.puntos >= 0 ? "+" : "") + r.puntos + " pts"
-                + (r.dinero != 0 ? "   $" + r.dinero : ""), c.x + 36, c.y + 24);
+                + (r.dinero != 0 ? "   $" + r.dinero : ""), c.x + 36, c.y + 19);
         g.setFont(Tema.fuente(Font.PLAIN, 12.5f));
         g.setColor(Tema.tintaSuave());
         String ruta = "Árbol de consecuencias: " + r.ruta.replace("->", "›");
-        g.drawString(Dibujo.recortar(g.getFontMetrics(), ruta, c.width - 40), c.x + 36, c.y + 44);
-        Font f = Tema.fuente(Font.PLAIN, 13);
+        g.drawString(Dibujo.recortar(g.getFontMetrics(), ruta, c.width - 40), c.x + 36, c.y + 38);
+        Font f = Tema.fuente(Font.PLAIN, 12.5f);
         g.setColor(Tema.tinta());
-        int y = c.y + 72;
+        int y = c.y + 60;
         List<String> lineas = new ArrayList<>();
         lineas.add("Era: " + r.caso.verdad.etiqueta + ". " + r.efecto.explicacion);
         if (r.caso.pub.getExplicacion() != null) {
@@ -1852,12 +2009,15 @@ public class OficinaVista extends Lienzo {
             lineas.add("Influencer: tu decisión pesó x1,5 en puntos y en la ciudad.");
         }
         for (String l : lineas) {
-            y = Dibujo.parrafo(g, f, l, c.x + 36, y, c.width - 50, 18, c.y + c.height - 40);
-            y += 4;
+            if (y > c.y + c.height - 34) {
+                break;
+            }
+            y = Dibujo.parrafo(g, f, l, c.x + 36, y, c.width - 50, 16, c.y + c.height - 30);
+            y += 2;
         }
         // como cambio Ciudad Nova con este sello
         String[] nom = {"Verificada", "Confianza", "Convivencia", "Bienestar", "Desinformación", "Conflictos"};
-        int x = c.x + 36, cy = c.y + c.height - 14;
+        int x = c.x + 36, cy = c.y + c.height - 4;
         g.setFont(Tema.fuente(Font.BOLD, 11.5f));
         for (int i = 0; i < 6; i++) {
             int d = cambioIndicadores[i];
@@ -1900,18 +2060,19 @@ public class OficinaVista extends Lienzo {
         g.setStroke(new BasicStroke(hover ? 2.2f : 1.2f));
         g.draw(s);
         g.setStroke(new BasicStroke(1));
-        int x = br.x + 12;
+        int x = br.x + 8;
         if (num > 0) {
+            double d = Math.min(24, br.height - 7);
             g.setColor(conf ? Tema.CREMA : Tema.COBRE);
-            g.fill(new Ellipse2D.Double(x, br.y - lift + br.height / 2.0 - 12, 24, 24));
-            g.setFont(Tema.fuente(Font.BOLD, 12));
+            g.fill(new Ellipse2D.Double(x, br.y - lift + br.height / 2.0 - d / 2, d, d));
+            g.setFont(Tema.fuente(Font.BOLD, (float) Math.min(12, d * 0.6)));
             g.setColor(conf ? Tema.COBRE : Tema.CREMA);
-            Dibujo.centrado(g, String.valueOf(num), x + 12, br.y - lift + br.height / 2.0 + 5);
-            x += 34;
+            Dibujo.centrado(g, String.valueOf(num), x + d / 2, br.y - lift + br.height / 2.0 + d * 0.22);
+            x += (int) d + 10;
         }
         Color tx = Tema.altoContraste ? Color.WHITE : conf ? Tema.CREMA : Tema.TINTA;
         String q = (conf ? "¡CONFRONTAR!  " : "") + n.pregunta;
-        Font f = Dibujo.ajustar(g, q, conf ? Font.BOLD : Font.PLAIN, 14, br.x + br.width - x - 34);
+        Font f = Dibujo.ajustar(g, q, conf ? Font.BOLD : Font.PLAIN, br.height < 32 ? 12.5f : 14, br.x + br.width - x - 34);
         g.setFont(f);
         g.setColor(tx);
         g.drawString(Dibujo.recortar(g.getFontMetrics(), q, br.x + br.width - x - 34), x, br.y - lift + br.height / 2 + 5);
@@ -1996,7 +2157,7 @@ public class OficinaVista extends Lienzo {
             g.setColor(Color.BLACK);
             g.fillRect(0, BARRA, W, H - BARRA);
         } else {
-            g.setPaint(new GradientPaint(0, BARRA, new Color(60, 30, 26, 246), W, H, new Color(30, 16, 22, 250)));
+            g.setPaint(new GradientPaint(0, BARRA, new Color(60, 30, 26), W, H, new Color(30, 16, 22)));
             g.fillRect(0, BARRA, W, H - BARRA);
             Graphics2D f = (Graphics2D) g.create();
             f.clipRect(0, BARRA, W, H - BARRA);
@@ -2015,89 +2176,94 @@ public class OficinaVista extends Lienzo {
         }
         int i = Math.min(segIdx, segmentos.size() - 1);
         Noticiero.Segmento s = segmentos.get(i);
-        // cabecera del canal
-        int cx = 40, cy = BARRA + 22;
+        Rectangle tv = new Rectangle((W - 870) / 2, BARRA + 94, 870, 582);
+        // luces del set: dos haces suaves que caen sobre la pantalla
+        if (!Tema.altoContraste) {
+            for (int q = 0; q < 2; q++) {
+                double lx = q == 0 ? tv.x - 120 : tv.x + tv.width + 120;
+                Path2D haz = new Path2D.Double();
+                haz.moveTo(lx - 18, BARRA);
+                haz.lineTo(lx + 18, BARRA);
+                haz.lineTo(q == 0 ? tv.x + 260 : tv.x + tv.width - 60, tv.y + tv.height);
+                haz.lineTo(q == 0 ? tv.x + 60 : tv.x + tv.width - 260, tv.y + tv.height);
+                haz.closePath();
+                g.setPaint(new GradientPaint((float) lx, BARRA, Tema.alfa(Tema.DORADO, 34), (float) lx, tv.y + tv.height,
+                        Tema.alfa(Tema.DORADO, 0)));
+                g.fill(haz);
+            }
+            // monograma grande y difuminado a cada lado
+            g.setFont(Tema.fuente(Font.BOLD, 150));
+            g.setColor(Tema.alfa(Tema.CREMA, 10));
+            Dibujo.centrado(g, "N", tv.x / 2.0, tv.getCenterY() + 50);
+            Dibujo.centrado(g, "N", tv.x + tv.width + (W - tv.x - tv.width) / 2.0, tv.getCenterY() + 50);
+            // silueta de la ciudad al fondo del set
+            Graphics2D h = (Graphics2D) g.create();
+            h.translate(0, H - 52 - 150);
+            horizonte(h, W, 150, 31, Tema.alfa(Tema.MADERA, 150), noticiasNoche ? 0.5 : 0.15, 120, noticiasNoche ? 0 : 1);
+            h.dispose();
+        }
+        // cabecera centrada: logo del canal entre dos filetes dorados
+        double mid = W / 2.0;
+        g.setFont(Tema.fuente(Font.BOLD, 24));
+        String canal = Noticiero.CANAL.toUpperCase();
+        int anchoCanal = g.getFontMetrics().stringWidth(canal);
+        int bloque = 58 + 16 + anchoCanal;
+        int lx = (int) (mid - bloque / 2.0), ly = BARRA + 14;
         g.setColor(Tema.LADRILLO);
-        g.fillRoundRect(cx, cy, 58, 40, 12, 12);
+        g.fillRoundRect(lx, ly, 58, 40, 12, 12);
+        g.setColor(Tema.alfa(Tema.CREMA, 90));
+        g.drawRoundRect(lx + 3, ly + 3, 52, 34, 9, 9);
         g.setFont(Tema.fuente(Font.BOLD, 20));
         g.setColor(Tema.CREMA);
-        Dibujo.centrado(g, "NN", cx + 29, cy + 28);
-        g.setFont(Tema.fuente(Font.BOLD, 22));
-        g.drawString(Noticiero.CANAL.toUpperCase(), cx + 74, cy + 22);
+        Dibujo.centrado(g, "NN", lx + 29, ly + 28);
+        g.setFont(Tema.fuente(Font.BOLD, 24));
+        g.drawString(canal, lx + 74, ly + 29);
+        g.setColor(Tema.alfa(Tema.DORADO, 160));
+        g.fillRect(tv.x, ly + 20, lx - 24 - tv.x, 1);
+        g.fillRect(lx + bloque + 24, ly + 20, tv.x + tv.width - (lx + bloque + 24), 1);
+        g.fill(new Ellipse2D.Double(lx - 28, ly + 17, 7, 7));
+        g.fill(new Ellipse2D.Double(lx + bloque + 21, ly + 17, 7, 7));
         g.setFont(Tema.fuente(Font.PLAIN, 13));
         g.setColor(Tema.textoSuave());
-        g.drawString((noticiasNoche ? "Edición de la noche" : "Edición de la mañana") + "  ·  Día " + j.dia + " de "
-                + Historia.DIAS + "  ·  " + Historia.TITULOS[j.dia], cx + 74, cy + 40);
-        // la senal
-        Rectangle tv = new Rectangle(40, BARRA + 82, 940, 630);
+        Dibujo.centrado(g, (noticiasNoche ? "Edición de la noche" : "Edición de la mañana") + "   ·   Día " + j.dia + " de "
+                + Historia.DIAS + "   ·   " + Historia.TITULOS[j.dia], mid, ly + 60);
+        // marco de la pantalla: bisel oscuro con canto de cobre y un brillo detras
+        if (!Tema.altoContraste) {
+            for (int q = 5; q > 0; q--) {
+                g.setColor(Tema.alfa(Tema.COBRE, 9));
+                g.fillRoundRect(tv.x - 10 - q * 5, tv.y - 10 - q * 5, tv.width + 20 + q * 10, tv.height + 20 + q * 10,
+                        34 + q * 6, 34 + q * 6);
+            }
+        }
+        g.setColor(Tema.altoContraste ? Color.WHITE : new Color(18, 10, 10));
+        g.fillRoundRect(tv.x - 10, tv.y - 10, tv.width + 20, tv.height + 20, 30, 30);
+        g.setColor(Tema.alfa(Tema.COBRE, 170));
+        g.setStroke(new BasicStroke(1.6f));
+        g.drawRoundRect(tv.x - 10, tv.y - 10, tv.width + 20, tv.height + 20, 30, 30);
+        g.setStroke(new BasicStroke(1));
         TeleVista.dibujar(g, tv, s, (int) segLetras, t, t - segInicioT, noticiasNoche);
-        // escaleta: los bloques del programa
-        Rectangle es = new Rectangle(tv.x + tv.width + 24, tv.y, W - (tv.x + tv.width + 24) - 40, tv.height);
-        g.setColor(Tema.altoContraste ? Color.BLACK : new Color(255, 235, 215, 16));
-        g.fillRoundRect(es.x, es.y, es.width, es.height, 22, 22);
-        g.setFont(Tema.fuente(Font.BOLD, 12));
-        g.setColor(Tema.acento2());
-        g.drawString("EN ESTA EDICIÓN", es.x + 20, es.y + 30);
-        int y = es.y + 50;
-        for (int k = 0; k < segmentos.size(); k++) {
-            Noticiero.Segmento sk = segmentos.get(k);
-            boolean actual = k == i, visto = k < i;
-            Rectangle fr = new Rectangle(es.x + 12, y, es.width - 24, 58);
-            if (actual) {
-                g.setColor(Tema.alfa(Tema.COBRE, 200));
-                g.fillRoundRect(fr.x, fr.y, fr.width, fr.height, 16, 16);
-                double prog = sk.texto.isEmpty() ? 1 : segLetras / sk.texto.length();
-                g.setColor(Tema.alfa(Tema.DORADO, 220));
-                g.fillRoundRect(fr.x + 12, fr.y + fr.height - 9, (int) ((fr.width - 24) * prog), 4, 4, 4);
-            }
-            g.setColor(visto ? Tema.SALVIA : actual ? Tema.CREMA : Tema.alfa(Tema.CREMA, 70));
-            g.fill(new Ellipse2D.Double(fr.x + 12, fr.y + 17, 22, 22));
-            g.setFont(Tema.fuente(Font.BOLD, 11));
-            g.setColor(actual ? Tema.COBRE : Tema.MADERA);
-            Dibujo.centrado(g, String.valueOf(k + 1), fr.x + 23, fr.y + 32);
-            g.setFont(Tema.fuente(Font.BOLD, 12));
-            g.setColor(actual ? Tema.CREMA : visto ? Tema.textoSuave() : Tema.texto());
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), sk.rotulo, fr.width - 56), fr.x + 44, fr.y + 25);
-            g.setFont(Tema.fuente(Font.PLAIN, 10.5f));
-            g.setColor(actual ? Tema.alfa(Tema.CREMA, 200) : Tema.textoSuave());
-            g.drawString(sk.zona >= 0 ? "En vivo · " + Noticiero.REPORTERO : "Estudio · " + Noticiero.PRESENTADORA,
-                    fr.x + 44, fr.y + 42);
-            y += 64;
-        }
-        // termometro de la ciudad: los 6 indicadores en vivo
-        CiudadEstado ci = j.jugador.ciudad;
-        String[] nom = {"Verificada", "Confianza", "Convivencia", "Bienestar", "Desinformación", "Conflictos"};
-        int[] val = indicadores(ci);
-        y += 14;
-        g.setFont(Tema.fuente(Font.BOLD, 12));
-        g.setColor(Tema.acento2());
-        g.drawString("TERMÓMETRO DE CIUDAD NOVA", es.x + 20, y);
-        y += 8;
-        for (int k = 0; k < 6; k++) {
-            int yy = y + 18 + k * 22;
-            if (yy > es.y + es.height - 130) {
-                break;
-            }
-            boolean malo = k >= 4;
-            boolean bien = malo ? val[k] < 35 : val[k] >= 50;
-            g.setFont(Tema.fuente(Font.PLAIN, 11));
-            g.setColor(Tema.texto());
-            g.drawString(nom[k], es.x + 20, yy);
-            String vs = val[k] + (k == 4 ? " %" : "");
-            g.drawString(vs, es.x + es.width - 20 - g.getFontMetrics().stringWidth(vs), yy);
-            int bx = es.x + 120, bw = es.width - 180;
-            g.setColor(new Color(0, 0, 0, 90));
-            g.fillRoundRect(bx, yy - 8, bw, 7, 7, 7);
-            g.setColor(bien ? Tema.SALVIA : Tema.LADRILLO);
-            g.fillRoundRect(bx, yy - 8, bw * Math.max(0, Math.min(100, val[k])) / 100, 7, 7, 7);
-        }
+        // pie: saltar, puntos de avance y siguiente
+        int py = tv.y + tv.height + 22;
+        boton(g, new Rectangle(tv.x - 10, py, 190, 44), "Saltar  (Esc)", Dibujo.Estilo.SECUNDARIO, this::terminarNoticias);
         boolean fin = i >= segmentos.size() - 1 && segLetras >= s.texto.length();
         String sig = fin ? (reviendo ? "Volver a la ventanilla" : noticiasNoche ? "Resumen del día" : "Ir a trabajar")
                 + "  (Espacio)" : "Siguiente  (Espacio)";
-        boton(g, new Rectangle(es.x + 12, es.y + es.height - 116, es.width - 24, 50), sig, Dibujo.Estilo.PRINCIPAL,
-                this::avanzarNoticia);
-        boton(g, new Rectangle(es.x + 12, es.y + es.height - 58, es.width - 24, 44), "Saltar  (Esc)", Dibujo.Estilo.SECUNDARIO,
-                this::terminarNoticias);
+        boton(g, new Rectangle(tv.x + tv.width + 10 - 270, py, 270, 44), sig, Dibujo.Estilo.PRINCIPAL, this::avanzarNoticia);
+        int n = segmentos.size(), paso = 30;
+        double px0 = mid - (n - 1) * paso / 2.0;
+        for (int k = 0; k < n; k++) {
+            double dx = px0 + k * paso, dy = py + 22;
+            if (k == i) {
+                double prog = s.texto.isEmpty() ? 1 : Math.min(1, segLetras / s.texto.length());
+                g.setColor(Tema.alfa(Tema.CREMA, 50));
+                g.fillRoundRect((int) dx - 11, (int) dy - 5, 22, 10, 10, 10);
+                g.setColor(Tema.DORADO);
+                g.fillRoundRect((int) dx - 11, (int) dy - 5, (int) Math.max(10, 22 * prog), 10, 10, 10);
+            } else {
+                g.setColor(k < i ? Tema.alfa(Tema.DORADO, 200) : Tema.alfa(Tema.CREMA, 70));
+                g.fill(new Ellipse2D.Double(dx - 5, dy - 5, 10, 10));
+            }
+        }
         // cinta de titulares a todo lo ancho
         int ty = H - 52;
         g.setColor(Tema.altoContraste ? Color.BLACK : new Color(24, 14, 14, 240));
@@ -2505,21 +2671,21 @@ public class OficinaVista extends Lienzo {
             case 2:
                 yy = paso(g, c, yy, 1, "Haz pasar al visitante", "Botón \"¡Siguiente!\" o Espacio. La fila es una cola: el primero en llegar pasa primero.", ancho);
                 yy = paso(g, c, yy, 2, "Pregúntale", "Las preguntas están en el cuadro de diálogo: arrástralas hacia el visitante (o clic, o teclas 1 a 6). Cada una gasta 3 minutos.", ancho);
-                yy = paso(g, c, yy, 3, "Investiga con el celular", "Ábrelo con P. Las herramientas son apps (Perfil, Directorio, Lupa, Imagen, Mapa, Red). Si encuentras una contradicción aparece una pregunta naranja ¡CONFRONTAR!.", ancho);
+                yy = paso(g, c, yy, 3, "Investiga con el celular", "Ábrelo con P. Las herramientas son apps (Perfil, Directorio, Lupa, Imagen, Mapa, Red). En la app Teléfono puedes llamar a cualquier contacto: si no tiene que ver con el caso pierdes 5 de vida. Una contradicción abre la pregunta naranja ¡CONFRONTAR!.", ancho);
                 yy = paso(g, c, yy, 4, rr.tieneMiniJuego() ? "Usa tu habilidad" : "Envía al corresponsal", rr.tieneMiniJuego()
                         ? "App \"Habilidad\" del celular o tecla U: " + rr.habilidad + "." : "App Mapa: el corresponsal va al barrio por la ruta más corta (Dijkstra) y te escribe al llegar.", ancho);
                 yy = paso(g, c, yy, 5, "Revisa la credencial", "Si el visitante trae carné aparece la billetera sobre el mostrador. Con la lupa señala la diferencia en la foto.", ancho);
-                paso(g, c, yy, 6, "Decide el sello", "Botón \"Decidir el sello\" (D). Caen círculos con todos los sellos: el primero que aciertas (Z X C V) elige tu sello y con 4 iguales se activa. Pisar otro sello cuesta una vida; dejar pasar no (margen de 10).", ancho);
+                paso(g, c, yy, 6, "Decide el sello", "Botón \"Decidir el sello\" (D). Caen círculos iguales (velocidad 1.0), cada uno con un sello adentro: el primero que aciertas (Z X C V) elige tu sello y con 4 iguales se activa. Pisar otro sello cuesta una vida; dejar pasar no (margen de 10).", ancho);
                 break;
             case 3:
                 yy = icono(g, c, yy, "ayuda.png", "Ayuda (M o F1)", "Esta guía. Cambia según tu rol.", ancho);
                 yy = icono(g, c, yy, "estructura.png", "Estructuras (F2)", "Árboles, grafos, tablas y cola del juego en vivo. El reloj se detiene.", ancho);
                 yy = icono(g, c, yy, "mapa.png", "Mapa y ciudad (F3 o G)", "Indicadores, barrios, pánico, corresponsal y la red de alerta.", ancho);
-                yy = icono(g, c, yy, "celular.png", "Celular (P o Tab)", "Sube solo con llamadas y avisos importantes. Apps, mensajes, noticias y tienda (S).", ancho);
+                yy = icono(g, c, yy, "celular.png", "Celular (P o Tab)", "Sube solo con llamadas y avisos importantes. Apps, mensajes, llamadas, noticias y la tienda (S) están dentro del celular.", ancho);
                 yy = icono(g, c, yy, "pausa.png", "Pausa (Esc)", "Detiene el reloj. Accesibilidad y salir al menú.", ancho);
                 yy = icono(g, c, yy, "billetera.png", "Credencial (I)", "Solo aparece si el visitante trae carné. Una X roja en una app = no aplica.", ancho);
-                yy = icono(g, c, yy, "verificarr.png", "Sellos (D o Z X C V)", "Pista de 4 carriles Z X C V: 4 círculos iguales activan el sello. Otro sello = −1 vida.", ancho);
-                parrafoAyuda(g, "Teclas: Espacio continuar · 1-6 preguntas · Q W E R T Y apps · U habilidad · K llamar · L lupa · X acusar en la lupa.",
+                yy = icono(g, c, yy, "verificarr.png", "Sellos (D o Z X C V)", "Pista de 4 carriles Z X C V: todos los círculos se ven iguales; descubre tu sello por la imagen. 4 aciertos lo activan. Otro sello = −1 vida.", ancho);
+                parrafoAyuda(g, "Teclas: Espacio continuar · 1-6 preguntas · Q W E R T Y apps · U habilidad · K llamar a la institución · S tienda · L lupa · X acusar en la lupa. Barra Vida: cada llamada que no aplica resta 5; en 0 recibes una advertencia.",
                         c, yy + 4, ancho, yMax);
                 break;
             case 4:
@@ -3089,7 +3255,8 @@ public class OficinaVista extends Lienzo {
         g.setComposite(antes);
     }
 
-    private void comprar(Tienda.Articulo a) {
+    /** Compra desde la app Tienda del celular. */
+    void comprar(Tienda.Articulo a) {
         String m = Tienda.comprar(a, j);
         if (m.startsWith("[x] ")) {
             alertaRoja(m.substring(4));
@@ -3106,7 +3273,7 @@ public class OficinaVista extends Lienzo {
     }
 
     /** Icono dibujado de cada articulo de la tienda. */
-    private void iconoArticulo(Graphics2D g, Tienda.Articulo a, double cx, double cy, double r) {
+    static void iconoArticulo(Graphics2D g, Tienda.Articulo a, double cx, double cy, double r) {
         Graphics2D s = (Graphics2D) g.create();
         s.setStroke(new BasicStroke((float) (r * 0.13), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         s.setColor(Tema.CREMA);
@@ -3158,87 +3325,11 @@ public class OficinaVista extends Lienzo {
         s.dispose();
     }
 
-    private void tienda(Graphics2D g) {
-        Rectangle r = panelBase(g, 1160, 720, "Tienda de la agencia", "billetera.png", false);
-        JugadorVerificador jv = j.jugador;
-        // saldo
-        Rectangle sal = new Rectangle(r.x + r.width - 330, r.y + 22, 250, 40);
-        g.setColor(Tema.altoContraste ? Color.BLACK : Tema.TINTA);
-        g.fillRoundRect(sal.x, sal.y, sal.width, sal.height, 20, 20);
-        g.setFont(Tema.fuente(Font.PLAIN, 12.5f));
-        g.setColor(Tema.textoSuave());
-        g.drawString("Tu dinero", sal.x + 18, sal.y + 25);
-        g.setFont(Tema.fuente(Font.BOLD, 20));
-        g.setColor(Tema.acento2());
-        String dn = "$" + jv.dinero;
-        g.drawString(dn, sal.x + sal.width - 18 - g.getFontMetrics().stringWidth(dn), sal.y + 28);
-        g.setFont(Tema.fuente(Font.PLAIN, 13));
-        g.setColor(Tema.tintaSuave());
-        g.drawString("Gasta lo que ganas (sueldo, casos y campañas) en mejoras y suministros. El reloj se detiene mientras compras.",
-                r.x + 84, r.y + 74);
-        Tienda.Articulo[] arts = Tienda.Articulo.values();
-        int cols = 4, gap = 16;
-        int cw = (r.width - 48 - gap * (cols - 1)) / cols, ch = 250;
-        for (int i = 0; i < arts.length; i++) {
-            Tienda.Articulo a = arts[i];
-            Rectangle c = new Rectangle(r.x + 24 + (i % cols) * (cw + gap), r.y + 96 + (i / cols) * (ch + gap), cw, ch);
-            String no = Tienda.motivoNoCompra(a, j);
-            boolean hv = encima(c);
-            g.setColor(Tema.altoContraste ? Color.BLACK : hv ? Color.WHITE : new Color(255, 255, 255, 170));
-            g.fillRoundRect(c.x, c.y, c.width, c.height, 20, 20);
-            g.setColor(hv ? Tema.acento() : Tema.altoContraste ? Color.WHITE : new Color(200, 160, 140));
-            g.setStroke(new BasicStroke(hv ? 2.2f : 1.2f));
-            g.drawRoundRect(c.x, c.y, c.width, c.height, 20, 20);
-            g.setStroke(new BasicStroke(1));
-            Color ic = i < 3 ? Tema.COBRE : i < 5 ? Tema.LILA : i == 5 ? Tema.SALVIA : Tema.DORADO.darker();
-            g.setColor(Tema.altoContraste ? Color.DARK_GRAY : ic);
-            g.fill(new Ellipse2D.Double(c.x + 18, c.y + 18, 54, 54));
-            iconoArticulo(g, a, c.x + 45, c.y + 45, 27);
-            g.setFont(Tema.fuente(Font.PLAIN, 11));
-            g.setColor(Tema.tintaSuave());
-            g.drawString(a.tipo.toUpperCase(), c.x + 84, c.y + 36);
-            g.setFont(Tema.fuente(Font.BOLD, 17));
-            g.setColor(Tema.acento());
-            g.drawString("$" + a.precio, c.x + 84, c.y + 60);
-            g.setColor(Tema.tinta());
-            int yy = Dibujo.parrafo(g, Tema.fuente(Font.BOLD, 14.5f), a.nombre, c.x + 18, c.y + 98, c.width - 36, 19, c.y + 140);
-            g.setColor(Tema.tintaSuave());
-            Dibujo.parrafo(g, Tema.fuente(Font.PLAIN, 12.5f), a.descripcion, c.x + 18, yy + 4, c.width - 36, 17, c.y + ch - 62);
-            if (a == Tienda.Articulo.SEGURO && jv.seguros > 0) {
-                g.setFont(Tema.fuente(Font.BOLD, 11.5f));
-                g.setColor(Tema.bien());
-                g.drawString("Tienes " + jv.seguros, c.x + c.width - 70, c.y + 36);
-            }
-            if (a == Tienda.Articulo.LUPA_PRO && jv.lupaPrecision) {
-                g.setFont(Tema.fuente(Font.BOLD, 11.5f));
-                g.setColor(Tema.bien());
-                g.drawString("Comprada", c.x + c.width - 76, c.y + 36);
-            }
-            Rectangle b = new Rectangle(c.x + 16, c.y + ch - 54, c.width - 32, 40);
-            final Tienda.Articulo aa = a;
-            if (no == null) {
-                boton(g, b, "Comprar  (" + (i + 1) + ")", Dibujo.Estilo.PRINCIPAL, () -> comprar(aa));
-            } else {
-                // deshabilitado: el clic explica en rojo por que no se puede
-                Dibujo.boton(g, b, "No disponible", Dibujo.Estilo.SECUNDARIO, encima(b), false);
-                zona(b, () -> alertaRoja(no));
-            }
-        }
-        if (tiendaMsg != null && t - tiendaT < 5) {
-            Rectangle m = new Rectangle(r.x + 24, r.y + r.height - 64, r.width - 48, 44);
-            g.setColor(Tema.altoContraste ? Color.BLACK : Tema.alfa(Tema.SALVIA, 230));
-            g.fillRoundRect(m.x, m.y, m.width, m.height, 18, 18);
-            Iconos.marca(g, 2, m.x + 24, m.getCenterY(), 9);
-            g.setFont(Tema.fuente(Font.BOLD, 13.5f));
-            g.setColor(Tema.CREMA);
-            g.drawString(Dibujo.recortar(g.getFontMetrics(), tiendaMsg, m.width - 70), m.x + 46, m.y + 28);
-        } else {
-            g.setFont(Tema.fuente(Font.ITALIC, 12.5f));
-            g.setColor(Tema.tintaSuave());
-            g.drawString("Compras de la partida: " + (jv.compras.isEmpty() ? "ninguna todavía" : jv.compras.size() + " · gastado $" + jv.gastado)
-                    + "   ·   teclas 1 a " + arts.length + " para comprar · S o Esc para cerrar", r.x + 28, r.y + r.height - 34);
-        }
+    /** Ultimo mensaje de la tienda (para la app Tienda del celular). */
+    String mensajeTienda() {
+        return tiendaMsg != null && t - tiendaT < 5 ? tiendaMsg : null;
     }
+
 
 
     // ------------------------------------------------------------ utilidades
@@ -3268,7 +3359,7 @@ public class OficinaVista extends Lienzo {
             case "ESTRUCTURAS": panel = Panel.ESTRUCTURAS; break;
             case "PAUSA": panel = Panel.PAUSA; break;
             case "MAPA": panel = Panel.MAPA; break;
-            case "TIENDA": panel = Panel.TIENDA; break;
+            case "TIENDA": abrirTienda(); break;
             case "HABILIDAD": usarHabilidad(); break;
             case "SELLOS": decidir(); break;
             case "CELULAR": cel.abrir(); break;

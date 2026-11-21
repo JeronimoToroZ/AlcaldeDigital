@@ -409,3 +409,42 @@ desconecta, deja de frenar a los demás. `PruebaJuego` lo prueba con un servidor
 `JugadorVerificador.archivo` es un **ABB** donde cada publicación sellada se inserta con clave
 `credibilidad × 1000 + id`. La app Civitas muestra "Tu archivo" con el recorrido **inorden** (de la menos
 creíble a la más creíble). Lo prueba `PruebaRoles`.
+
+## 13. Versión 6: ventanilla real, llamadas con vida, tienda en el celular
+
+### 13.1 Pista de sellos
+- `PistaSellos.VELOCIDAD = 1.0` (lo comprueba `PruebaRoles`).
+- Todos los círculos tienen **el mismo anillo (cobre) y la misma opacidad**, también los receptores de los
+  4 carriles. Ya no se atenúan los que no son el sello elegido: el jugador reconoce su sello solo por la
+  imagen que va dentro del círculo.
+
+### 13.2 Noticiero
+- Se quitaron por completo el bloque "En esta edición" y el "Termómetro de Ciudad Nova".
+- Nueva portada: cabecera centrada con el logo NN entre filetes dorados, pantalla centrada con bisel y brillo
+  de cobre, haces de luz del set, silueta de la ciudad al fondo, puntos de avance y los botones debajo.
+  Se mantienen la paleta y la tipografía.
+
+### 13.3 Ventanilla y cuadro de diálogo
+- La ventanilla ahora tiene un **letrero** ("Atención al público", horario) con un **turnero** de luces
+  (`A-001`, `A-002`... = resultados atendidos + 1), vidrio con banda esmerilada, aviso pegado en el vidrio,
+  **bandeja** para pasar documentos, perfil de aluminio y un **timbre** en el mostrador.
+- El cuadro de diálogo bajó de 288 px a 194 px: dos líneas de texto, preguntas en chips compactos de dos
+  columnas y botones más pequeños.
+
+### 13.4 Llamadas desde el celular y barra de Vida
+- La app Teléfono lista la agenda (ABB, recorrido inorden) y **cada contacto se puede llamar**.
+- `Jornada.llamadaAplica(contacto)` compara el contacto con la institución del caso actual
+  (`institucionDelCaso()`), sin tildes (`Telefono.sinTildes`).
+- Si aplica, es la llamada de verificación de siempre. Si no aplica, `penalizarLlamada()` gasta 3 minutos y
+  resta **5 de vida** (`JugadorVerificador.vida`, de 0 a 100). Con la vida en 0, Don Ramiro da una
+  advertencia y la vida vuelve a 50.
+- La barra superior muestra la Vida. Pruebas nuevas en `PruebaRoles`: la llamada que no aplica resta 5, la
+  llamada correcta no resta y con la vida en 0 llega la advertencia.
+
+### 13.5 Celular
+- Se quitó el widget de indicadores de Ciudad Nova de la pantalla de inicio. "Tendencias en Ciudad Nova"
+  pasó a llamarse "Tendencias".
+- La **Tienda** es una app del celular: tarjeta de saldo, artículos agrupados por tipo y precio en una
+  pastilla verde (gris si no se puede comprar, y al tocarlo explica por qué). La tecla S la abre.
+
+Capturas en `docs/capturas_v6`.

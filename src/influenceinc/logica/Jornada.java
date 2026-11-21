@@ -527,6 +527,66 @@ public class Jornada {
         return t;
     }
 
+    /**
+     * La institucion a la que tiene sentido llamar por el caso actual: la que
+     * nombra la respuesta de la llamada o la duena de la cuenta en el
+     * directorio (AVL). null si no hay a quien llamar.
+     */
+    public String institucionDelCaso() {
+        if (actual == null) {
+            return null;
+        }
+        if (actual.llamada != null && actual.llamada.indexOf(':') > 0) {
+            return actual.llamada.substring(0, actual.llamada.indexOf(':'));
+        }
+        CuentaOficial o = actual.pub.getCuenta() == null ? null : jugador.directorio.buscar(actual.pub.getCuenta().getArroba());
+        return o == null ? null : o.institucion;
+    }
+
+    /** true si llamar a ese contacto de la agenda le sirve al caso actual. */
+    public boolean llamadaAplica(String contacto) {
+        String inst = institucionDelCaso();
+        return puedeLlamar() && inst != null && contacto != null
+                && Telefono.sinTildes(contacto).contains(Telefono.sinTildes(inst));
+    }
+
+    /**
+     * Llamada desde la agenda del celular. Si es la institucion del caso, es
+     * la llamada de verificacion de siempre. Si no aplica, se pierden 3
+     * minutos y 5 de VIDA (se le hizo perder el tiempo a alguien).
+     * @return {texto de la respuesta, "1" si aplico o "0" si no}
+     */
+    public String[] llamarA(String contacto) {
+        if (llamadaAplica(contacto)) {
+            return new String[]{llamar(), "1"};
+        }
+        penalizarLlamada();
+        String r;
+        if (actual == null) {
+            r = "No hay nadie en la ventanilla. Llamar ahora no sirve de nada.";
+        } else if (llamo) {
+            r = "Ya llamaste por este caso. Nadie más tiene algo que agregar.";
+        } else if (institucionDelCaso() == null) {
+            r = "La publicación no es de ninguna institución: llamar no confirma nada.";
+        } else {
+            r = "Esa persona no tiene nada que ver con este caso.";
+        }
+        return new String[]{contacto + ": \"¿Aló? ...¿Y eso qué tiene que ver conmigo?\" " + r, "0"};
+    }
+
+    /** Llamada que no aplica: -5 de vida y unos minutos perdidos. */
+    public void penalizarLlamada() {
+        gastar(3);
+        jugador.vida -= JugadorVerificador.COSTO_LLAMADA_MALA;
+        if (jugador.vida <= 0) {
+            jugador.vida = JugadorVerificador.VIDA_MAX / 2;
+            jugador.advertir();
+            if (jugador.despedido) {
+                cerrar();
+            }
+        }
+    }
+
     private void lupa(List<String> r) {
         Persona v = actual.visitante;
         if (v.credencial == null) {

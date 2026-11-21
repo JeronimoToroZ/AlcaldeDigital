@@ -129,6 +129,17 @@ public class Telefono {
         }
     }
 
+    /** Para comparar nombres sin importar tildes ni mayusculas. */
+    public static String sinTildes(String s) {
+        String a = "áéíóúü", b = "aeiouu";
+        StringBuilder sb = new StringBuilder();
+        for (char c : s.toLowerCase().toCharArray()) {
+            int i = a.indexOf(c);
+            sb.append(i >= 0 ? b.charAt(i) : c);
+        }
+        return sb.toString();
+    }
+
     // ------------------------------------------------------------------ agenda (ABB)
     public void agendar(String nombre, String detalle, String numero) {
         agenda.insertar(nombre, new Contacto(nombre, detalle, numero));

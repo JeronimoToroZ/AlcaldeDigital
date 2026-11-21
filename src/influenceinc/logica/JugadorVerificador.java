@@ -25,6 +25,13 @@ public class JugadorVerificador {
     public int puntos;
     public int dinero = 100;
     public int reputacion = 50;
+    /**
+     * VIDA (0 a 100): baja 5 con cada llamada que no aplica (hacer perder el
+     * tiempo a la gente). Si llega a 0, Don Ramiro da una advertencia y la
+     * vida vuelve a 50.
+     */
+    public int vida = VIDA_MAX;
+    public static final int VIDA_MAX = 100, COSTO_LLAMADA_MALA = 5;
     public int advertencias;
     public final CiudadEstado ciudad;
     public final ArbolAVLGenerico<String, CuentaOficial> directorio = new ArbolAVLGenerico<>();
@@ -94,6 +101,7 @@ public class JugadorVerificador {
                 arbol.eliminar(Veredicto.OPINION);
                 cambios.add("Veda electoral: se ELIMINÓ la rama OPINIÓN del árbol de consecuencias.");
                 CuentaOficial r = Historia.registraduria();
+                telefono.agendar(r.institucion, r.representante + " · " + r.cargo, r.telefono);
                 directorio.insertar(r.arroba, r);
                 cambios.add("Directorio (AVL): se INSERTÓ @registraduria_nova.");
                 break;

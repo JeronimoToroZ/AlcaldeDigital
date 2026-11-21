@@ -151,7 +151,7 @@ public class PruebaRoles {
         comprobar(jt.getMinuto() <= antesMin, "las horas extra devuelven minutos al reloj");
 
         System.out.println("\n=== PISTA DE SELLOS (estilo Pump It Up) ===");
-        comprobar(PistaSellos.VELOCIDAD == 1.1, "los círculos caen a velocidad 1.1");
+        comprobar(PistaSellos.VELOCIDAD == 1.0, "los círculos caen a velocidad 1.0");
         comprobar(PistaSellos.CARRILES == 4 && PistaSellos.TECLAS.equals("ZXCV"), "4 carriles: Z X C V");
         Partida ps = new Partida(Partida.Modo.SOLO, Arrays.asList("Ana"), Arrays.asList(RolJugador.PERIODISTA), 21, false);
         Jornada jp = ps.iniciarJornada();
@@ -249,6 +249,31 @@ public class PruebaRoles {
             crece &= claves.get(i - 1) < claves.get(i);
         }
         comprobar(claves.size() == 3 && crece, "ABB del archivo: las publicaciones selladas quedan clasificadas por credibilidad");
+
+        System.out.println("\n=== LLAMADAS DEL CELULAR Y VIDA ===");
+        Partida pl = new Partida(Partida.Modo.SOLO, Arrays.asList("Ana"), Arrays.asList(RolJugador.PERIODISTA), 9, false);
+        pl.siguienteTurno();
+        Jornada jl = pl.iniciarJornada();
+        Caso cl = jl.siguiente();
+        while (cl != null && jl.institucionDelCaso() == null) {
+            jl.sellar(cl.correcto);
+            cl = jl.siguiente();
+        }
+        comprobar(cl != null, "el día 2 trae un caso que se confirma llamando a una institución");
+        if (cl != null) {
+            int vidaAntes = jl.jugador.vida;
+            String[] inutil = jl.llamarA(Telefono.JEFE);
+            comprobar(inutil[1].equals("0") && jl.jugador.vida == vidaAntes - JugadorVerificador.COSTO_LLAMADA_MALA,
+                    "llamar a quien no aplica resta 5 de vida (" + vidaAntes + " -> " + jl.jugador.vida + ")");
+            String[] buena2 = jl.llamarA(jl.institucionDelCaso());
+            comprobar(buena2[1].equals("1") && !buena2[0].isEmpty() && jl.jugador.vida == vidaAntes - 5,
+                    "llamar a la institución del caso sí aplica y no quita vida");
+            int advPrevias = jl.jugador.advertencias;
+            jl.jugador.vida = JugadorVerificador.COSTO_LLAMADA_MALA;
+            jl.llamarA("Biblioteca Municipal");
+            comprobar(jl.jugador.advertencias == advPrevias + 1 && jl.jugador.vida == JugadorVerificador.VIDA_MAX / 2,
+                    "con la vida en 0 llega una advertencia y la vida vuelve a la mitad");
+        }
 
         System.out.println(fallos == 0 ? "\nTODAS LAS PRUEBAS PASARON" : "\nFALLOS: " + fallos);
         System.exit(fallos == 0 ? 0 : 1);
